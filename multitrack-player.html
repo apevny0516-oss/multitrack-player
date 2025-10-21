@@ -9,6 +9,9 @@
     .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; }
     button.active { background-color: #007bff; color: white; border-color: #007bff; }
+    .progress-container { margin-top: 1rem; }
+    input[type=range].progress { width: 100%; }
+    .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
   </style>
 </head>
 <body>
@@ -19,7 +22,14 @@
     <button id="stop">Stop</button>
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
+
+  <div class="progress-container">
+    <input id="progress" type="range" class="progress" min="0" max="1" step="0.001" value="0">
+    <div class="time"><span id="currentTime">0:00</span><span id="totalTime">0:00</span></div>
+  </div>
+
   <div id="tracks"></div>
+
   <script>
     const params = new URLSearchParams(window.location.search);
     const stems = [];
@@ -33,6 +43,10 @@
 
     const trackData = [];
 
+    let playingNodes = [];
+    let startAt = 0, pausedAt = 0, playing = false;
+    let raf;
+
     async function loadStems() {
       for (const s of stems) {
         try {
@@ -45,6 +59,7 @@
         }
       }
       renderTracks();
+      updateDuration();
     }
 
     function renderTracks() {
@@ -68,7 +83,7 @@
       updateButtonStates();
     }
 
-    function handleTrackControl(e, track, container) {
+    function handleTrackControl(e, track) {
       const act = e.target.dataset.action;
       if (act === 'gain') track.gain = Number(e.target.value);
       if (act === 'mute') track.muted = !track.muted;
@@ -87,9 +102,6 @@
       });
     }
 
-    const playingNodes = [];
-    let startAt = 0, pausedAt = 0, playing = false;
-
     function startPlayback(offset = 0) {
       const soloed = trackData.some(t => t.solo);
       stopPlayback();
@@ -106,12 +118,14 @@
       });
       startAt = ctx.currentTime - offset;
       playing = true;
+      updateProgress();
     }
 
     function stopPlayback() {
       playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
-      playingNodes.length = 0;
+      playingNodes = [];
       playing = false;
+      cancelAnimationFrame(raf);
     }
 
     function pausePlayback() {
@@ -127,12 +141,46 @@
       });
     }
 
+    function updateDuration() {
+      const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+      document.getElementById('totalTime').textContent = formatTime(total);
+    }
+
+    function updateProgress() {
+      if (!playing) return;
+      const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+      const elapsed = ctx.currentTime - startAt;
+      const progress = Math.min(elapsed / total, 1);
+      document.getElementById('progress').value = progress;
+      document.getElementById('currentTime').textContent = formatTime(elapsed);
+      if (progress < 1) raf = requestAnimationFrame(updateProgress);
+    }
+
+    function seekTo(pct) {
+      const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+      const sec = pct * total;
+      pausedAt = sec;
+      if (playing) startPlayback(sec);
+      else document.getElementById('currentTime').textContent = formatTime(sec);
+    }
+
+    function formatTime(sec) {
+      if (!sec || isNaN(sec)) return '0:00';
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    document.getElementById('progress').addEventListener('input', (e) => {
+      seekTo(Number(e.target.value));
+    });
+
     document.getElementById('play').onclick = () => {
       if (ctx.state === 'suspended') ctx.resume();
       if (!playing) startPlayback(pausedAt);
     };
     document.getElementById('pause').onclick = pausePlayback;
-    document.getElementById('stop').onclick = () => { pausedAt = 0; stopPlayback(); };
+    document.getElementById('stop').onclick = () => { pausedAt = 0; stopPlayback(); document.getElementById('progress').value = 0; document.getElementById('currentTime').textContent = '0:00'; };
     document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
 
     loadStems();
