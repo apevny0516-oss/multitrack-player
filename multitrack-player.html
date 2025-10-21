@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multitrack Player</title>
+  <style>
+    body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
+    .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Multitrack Player</h2>
+  <div>
+    <button id="play">Play</button>
+    <button id="pause">Pause</button>
+    <button id="stop">Stop</button>
+    <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
+  </div>
+  <div id="tracks"></div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const stems = [];
+    for (const [key, value] of params.entries()) {
+      stems.push({ name: key, url: value });
+    }
+
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const masterGain = ctx.createGain();
+    masterGain.connect(ctx.destination);
+
+    const trackData = [];
+
+    async function loadStems() {
+      for (const s of stems) {
+        try {
+          const res = await fetch(s.url);
+          const arr = await res.arrayBuffer();
+          const buf = await ctx.decodeAudioData(arr);
+          trackData.push({ ...s, buffer: buf, gain: 1, muted: false, solo: false });
+        } catch (e) {
+          console.error('Error loading', s.url, e);
+        }
+      }
+      renderTracks();
+    }
+
+    function renderTracks() {
+      const container = document.getElementById('tracks');
+      container.innerHTML = '';
+      trackData.forEach((t, i) => {
+        const div = document.createElement('div');
+        div.className = 'track';
+        div.innerHTML = `
+          <strong>${t.name}</strong><br>
+          <button data-action="solo">Solo</button>
+          <button data-action="mute">Mute</button>
+          <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
+        `;
+        div.querySelectorAll('button, input').forEach(el => {
+          el.addEventListener('click', (e) => handleTrackControl(e, t));
+          el.addEventListener('input', (e) => handleTrackControl(e, t));
+        });
+        container.appendChild(div);
+      });
+    }
+
+    function handleTrackControl(e, track) {
+      const act = e.target.dataset.action;
+      if (act === 'gain') track.gain = Number(e.target.value);
+      if (act === 'mute') track.muted = !track.muted;
+      if (act === 'solo') track.solo = !track.solo;
+      updateGains();
+    }
+
+    const playingNodes = [];
+    let startAt = 0, pausedAt = 0, playing = false;
+
+    function startPlayback(offset = 0) {
+      const soloed = trackData.some(t => t.solo);
+      stopPlayback();
+      trackData.forEach(t => {
+        if (!t.buffer) return;
+        const src = ctx.createBufferSource();
+        src.buffer = t.buffer;
+        const g = ctx.createGain();
+        g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain;
+        src.connect(g);
+        g.connect(masterGain);
+        src.start(0, offset);
+        playingNodes.push({ src, g, t });
+      });
+      startAt = ctx.currentTime - offset;
+      playing = true;
+    }
+
+    function stopPlayback() {
+      playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
+      playingNodes.length = 0;
+      playing = false;
+    }
+
+    function pausePlayback() {
+      if (!playing) return;
+      pausedAt = ctx.currentTime - startAt;
+      stopPlayback();
+    }
+
+    function updateGains() {
+      const soloed = trackData.some(t => t.solo);
+      playingNodes.forEach(p => {
+        p.g.gain.value = soloed ? (p.t.solo ? p.t.gain : 0) : (p.t.muted ? 0 : p.t.gain);
+      });
+    }
+
+    document.getElementById('play').onclick = () => {
+      if (ctx.state === 'suspended') ctx.resume();
+      if (!playing) startPlayback(pausedAt);
+    };
+    document.getElementById('pause').onclick = pausePlayback;
+    document.getElementById('stop').onclick = () => { pausedAt = 0; stopPlayback(); };
+    document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
+
+    loadStems();
+  </script>
+</body>
+</html>
