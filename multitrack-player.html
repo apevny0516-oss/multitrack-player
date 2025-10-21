@@ -19,6 +19,7 @@
     <button id="play">Play</button>
     <button id="pause">Pause</button>
     <button id="stop">Stop</button>
+    <button id="loop">Loop Start</button>
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
 
@@ -41,6 +42,31 @@
     let playingNodes = [];
     let startAt = 0, pausedAt = 0, playing = false;
     let raf;
+
+    // Loop control
+    let loopActive = false;
+    let loopStart = null;
+    let loopEnd = null;
+
+    const loopButton = document.getElementById('loop');
+    loopButton.addEventListener('click', () => {
+      const current = ctx.currentTime - startAt;
+      if (!loopStart && !loopEnd) {
+        loopStart = current;
+        loopButton.textContent = 'Loop End';
+      } else if (loopStart && !loopEnd) {
+        loopEnd = current;
+        loopActive = true;
+        loopButton.textContent = 'Clear Loop';
+        loopButton.classList.add('active');
+      } else {
+        loopActive = false;
+        loopStart = null;
+        loopEnd = null;
+        loopButton.textContent = 'Loop Start';
+        loopButton.classList.remove('active');
+      }
+    });
 
     // Create Canvas-safe progress UI dynamically
     const progressContainer = document.getElementById('progressContainer');
@@ -171,6 +197,12 @@
       const progressValue = Math.min(elapsed / total, 1);
       progress.value = progressValue;
       currentTimeEl.textContent = formatTime(elapsed);
+
+      if (loopActive && loopStart !== null && loopEnd !== null && elapsed >= loopEnd) {
+        startPlayback(loopStart);
+        return;
+      }
+
       if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
     }
 
