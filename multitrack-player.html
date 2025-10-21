@@ -10,7 +10,6 @@
     button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; }
     button.active { background-color: #007bff; color: white; border-color: #007bff; }
     .progress-container { margin-top: 1rem; }
-    input[type=range].progress { width: 100%; }
     .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
   </style>
 </head>
@@ -23,11 +22,7 @@
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
 
-  <div class="progress-container">
-    <input id="progress" type="range" class="progress" min="0" max="1" step="0.001" value="0">
-    <div class="time"><span id="currentTime">0:00</span><span id="totalTime">0:00</span></div>
-  </div>
-
+  <div id="progressContainer" class="progress-container"></div>
   <div id="tracks"></div>
 
   <script>
@@ -46,6 +41,29 @@
     let playingNodes = [];
     let startAt = 0, pausedAt = 0, playing = false;
     let raf;
+
+    // Create Canvas-safe progress UI dynamically
+    const progressContainer = document.getElementById('progressContainer');
+    const progress = document.createElement('input');
+    progress.type = 'range';
+    progress.min = 0;
+    progress.max = 1;
+    progress.step = 0.001;
+    progress.value = 0;
+    progress.style.width = '100%';
+    progress.style.display = 'block';
+    progress.style.marginTop = '1rem';
+
+    const timeRow = document.createElement('div');
+    timeRow.className = 'time';
+    const currentTimeEl = document.createElement('span');
+    currentTimeEl.textContent = '0:00';
+    const totalTimeEl = document.createElement('span');
+    totalTimeEl.textContent = '0:00';
+    timeRow.appendChild(currentTimeEl);
+    timeRow.appendChild(totalTimeEl);
+    progressContainer.appendChild(progress);
+    progressContainer.appendChild(timeRow);
 
     async function loadStems() {
       for (const s of stems) {
@@ -143,17 +161,17 @@
 
     function updateDuration() {
       const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
-      document.getElementById('totalTime').textContent = formatTime(total);
+      totalTimeEl.textContent = formatTime(total);
     }
 
     function updateProgress() {
       if (!playing) return;
       const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
       const elapsed = ctx.currentTime - startAt;
-      const progress = Math.min(elapsed / total, 1);
-      document.getElementById('progress').value = progress;
-      document.getElementById('currentTime').textContent = formatTime(elapsed);
-      if (progress < 1) raf = requestAnimationFrame(updateProgress);
+      const progressValue = Math.min(elapsed / total, 1);
+      progress.value = progressValue;
+      currentTimeEl.textContent = formatTime(elapsed);
+      if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
     }
 
     function seekTo(pct) {
@@ -161,7 +179,7 @@
       const sec = pct * total;
       pausedAt = sec;
       if (playing) startPlayback(sec);
-      else document.getElementById('currentTime').textContent = formatTime(sec);
+      else currentTimeEl.textContent = formatTime(sec);
     }
 
     function formatTime(sec) {
@@ -171,7 +189,7 @@
       return `${m}:${s.toString().padStart(2, '0')}`;
     }
 
-    document.getElementById('progress').addEventListener('input', (e) => {
+    progress.addEventListener('input', (e) => {
       seekTo(Number(e.target.value));
     });
 
@@ -180,7 +198,12 @@
       if (!playing) startPlayback(pausedAt);
     };
     document.getElementById('pause').onclick = pausePlayback;
-    document.getElementById('stop').onclick = () => { pausedAt = 0; stopPlayback(); document.getElementById('progress').value = 0; document.getElementById('currentTime').textContent = '0:00'; };
+    document.getElementById('stop').onclick = () => {
+      pausedAt = 0;
+      stopPlayback();
+      progress.value = 0;
+      currentTimeEl.textContent = '0:00';
+    };
     document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
 
     loadStems();
