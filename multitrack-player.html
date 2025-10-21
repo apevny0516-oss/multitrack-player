@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Multitrack Player</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
   <style>
     body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
     .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -21,6 +22,7 @@
     <button id="pause">Pause</button>
     <button id="stop">Stop</button>
     <button id="loop">Loop Start</button>
+    <label>Pitch (Semitones) <input id="pitch" type="range" min="-12" max="12" step="1" value="0"></label>
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
 
@@ -34,44 +36,14 @@
       stems.push({ name: key, url: value });
     }
 
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const masterGain = ctx.createGain();
-    masterGain.connect(ctx.destination);
-
     const trackData = [];
-
-    let playingNodes = [];
-    let startAt = 0, pausedAt = 0, playing = false;
+    let playing = false;
+    let startAt = 0, pausedAt = 0;
     let raf;
 
-    // Loop control
-    let loopActive = false;
-    let loopStart = null;
-    let loopEnd = null;
+    let loopActive = false, loopStart = null, loopEnd = null;
 
     const loopButton = document.getElementById('loop');
-    loopButton.addEventListener('click', () => {
-      const current = ctx.currentTime - startAt;
-      if (!loopStart && !loopEnd) {
-        loopStart = current;
-        loopButton.textContent = 'Loop End';
-      } else if (loopStart && !loopEnd) {
-        loopEnd = current;
-        loopActive = true;
-        loopButton.textContent = 'Clear Loop';
-        loopButton.classList.add('active');
-        renderLoopHighlight();
-      } else {
-        loopActive = false;
-        loopStart = null;
-        loopEnd = null;
-        loopButton.textContent = 'Loop Start';
-        loopButton.classList.remove('active');
-        clearLoopHighlight();
-      }
-    });
-
-    // Create Canvas-safe progress UI dynamically
     const progressContainer = document.getElementById('progressContainer');
     const progress = document.createElement('input');
     progress.type = 'range';
@@ -98,16 +70,30 @@
     progressContainer.appendChild(progress);
     progressContainer.appendChild(timeRow);
 
+    const masterVol = document.getElementById('masterVol');
+    const pitchSlider = document.getElementById('pitch');
+
+    const pitchShift = new Tone.PitchShift(0).toDestination();
+    const masterGain = new Tone.Volume(0).toDestination();
+
+    masterVol.addEventListener('input', e => {
+      masterGain.volume.value = Tone.gainToDb(Number(e.target.value));
+    });
+
+    pitchSlider.addEventListener('input', e => {
+      pitchShift.pitch = Number(e.target.value);
+    });
+
     async function loadStems() {
       for (const s of stems) {
-        try {
-          const res = await fetch(s.url);
-          const arr = await res.arrayBuffer();
-          const buf = await ctx.decodeAudioData(arr);
-          trackData.push({ ...s, buffer: buf, gain: 1, muted: false, solo: false });
-        } catch (e) {
-          console.error('Error loading', s.url, e);
+        const player = new Tone.Player(s.url);
+        if (s.name.toLowerCase() !== 'drums' && s.name.toLowerCase() !== 'metronome') {
+          player.connect(pitchShift);
+        } else {
+          player.toDestination();
         }
+        await player.load();
+        trackData.push({ name: s.name, player: player, buffer: player.buffer, gain: 1, muted: false, solo: false });
       }
       renderTracks();
       updateDuration();
@@ -126,8 +112,8 @@
           <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
         `;
         div.querySelectorAll('button, input').forEach(el => {
-          el.addEventListener('click', (e) => handleTrackControl(e, t, div));
-          el.addEventListener('input', (e) => handleTrackControl(e, t, div));
+          el.addEventListener('click', (e) => handleTrackControl(e, t));
+          el.addEventListener('input', (e) => handleTrackControl(e, t));
         });
         container.appendChild(div);
       });
@@ -140,7 +126,6 @@
       if (act === 'mute') track.muted = !track.muted;
       if (act === 'solo') track.solo = !track.solo;
       updateButtonStates();
-      updateGains();
     }
 
     function updateButtonStates() {
@@ -153,43 +138,28 @@
       });
     }
 
-    function startPlayback(offset = 0) {
-      const soloed = trackData.some(t => t.solo);
-      stopPlayback();
+    function playAll(offset = 0) {
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
       trackData.forEach(t => {
-        if (!t.buffer) return;
-        const src = ctx.createBufferSource();
-        src.buffer = t.buffer;
-        const g = ctx.createGain();
-        g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain;
-        src.connect(g);
-        g.connect(masterGain);
-        src.start(0, offset);
-        playingNodes.push({ src, g, t });
+        if (t.player.buffer) {
+          t.player.start(0, offset);
+        }
       });
-      startAt = ctx.currentTime - offset;
       playing = true;
+      startAt = Tone.now() - offset;
       updateProgress();
     }
 
-    function stopPlayback() {
-      playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
-      playingNodes = [];
+    function stopAll() {
+      trackData.forEach(t => t.player.stop());
       playing = false;
       cancelAnimationFrame(raf);
     }
 
-    function pausePlayback() {
-      if (!playing) return;
-      pausedAt = ctx.currentTime - startAt;
-      stopPlayback();
-    }
-
-    function updateGains() {
-      const soloed = trackData.some(t => t.solo);
-      playingNodes.forEach(p => {
-        p.g.gain.value = soloed ? (p.t.solo ? p.t.gain : 0) : (p.t.muted ? 0 : p.t.gain);
-      });
+    function pauseAll() {
+      stopAll();
+      pausedAt = Tone.now() - startAt;
     }
 
     function updateDuration() {
@@ -214,16 +184,15 @@
     function updateProgress() {
       if (!playing) return;
       const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
-      const elapsed = ctx.currentTime - startAt;
+      const elapsed = Tone.now() - startAt;
       const progressValue = Math.min(elapsed / total, 1);
       progress.value = progressValue;
       currentTimeEl.textContent = formatTime(elapsed);
 
       if (loopActive && loopStart !== null && loopEnd !== null && elapsed >= loopEnd) {
-        startPlayback(loopStart);
+        playAll(loopStart);
         return;
       }
-
       if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
     }
 
@@ -231,7 +200,7 @@
       const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
       const sec = pct * total;
       pausedAt = sec;
-      if (playing) startPlayback(sec);
+      if (playing) playAll(sec);
       else currentTimeEl.textContent = formatTime(sec);
     }
 
@@ -246,18 +215,37 @@
       seekTo(Number(e.target.value));
     });
 
+    loopButton.addEventListener('click', () => {
+      const current = Tone.now() - startAt;
+      if (!loopStart && !loopEnd) {
+        loopStart = current;
+        loopButton.textContent = 'Loop End';
+      } else if (loopStart && !loopEnd) {
+        loopEnd = current;
+        loopActive = true;
+        loopButton.textContent = 'Clear Loop';
+        loopButton.classList.add('active');
+        renderLoopHighlight();
+      } else {
+        loopActive = false;
+        loopStart = null;
+        loopEnd = null;
+        loopButton.textContent = 'Loop Start';
+        loopButton.classList.remove('active');
+        clearLoopHighlight();
+      }
+    });
+
     document.getElementById('play').onclick = () => {
-      if (ctx.state === 'suspended') ctx.resume();
-      if (!playing) startPlayback(pausedAt);
+      if (!playing) playAll(pausedAt);
     };
-    document.getElementById('pause').onclick = pausePlayback;
+    document.getElementById('pause').onclick = pauseAll;
     document.getElementById('stop').onclick = () => {
       pausedAt = 0;
-      stopPlayback();
+      stopAll();
       progress.value = 0;
       currentTimeEl.textContent = '0:00';
     };
-    document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
 
     loadStems();
   </script>
