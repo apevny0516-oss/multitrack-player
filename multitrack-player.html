@@ -7,7 +7,8 @@
   <style>
     body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
     .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    button { cursor: pointer; }
+    button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; }
+    button.active { background-color: #007bff; color: white; border-color: #007bff; }
   </style>
 </head>
 <body>
@@ -49,7 +50,7 @@
     function renderTracks() {
       const container = document.getElementById('tracks');
       container.innerHTML = '';
-      trackData.forEach((t, i) => {
+      trackData.forEach((t) => {
         const div = document.createElement('div');
         div.className = 'track';
         div.innerHTML = `
@@ -59,19 +60,31 @@
           <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
         `;
         div.querySelectorAll('button, input').forEach(el => {
-          el.addEventListener('click', (e) => handleTrackControl(e, t));
-          el.addEventListener('input', (e) => handleTrackControl(e, t));
+          el.addEventListener('click', (e) => handleTrackControl(e, t, div));
+          el.addEventListener('input', (e) => handleTrackControl(e, t, div));
         });
         container.appendChild(div);
       });
+      updateButtonStates();
     }
 
-    function handleTrackControl(e, track) {
+    function handleTrackControl(e, track, container) {
       const act = e.target.dataset.action;
       if (act === 'gain') track.gain = Number(e.target.value);
       if (act === 'mute') track.muted = !track.muted;
       if (act === 'solo') track.solo = !track.solo;
+      updateButtonStates();
       updateGains();
+    }
+
+    function updateButtonStates() {
+      document.querySelectorAll('.track').forEach((trackDiv, index) => {
+        const track = trackData[index];
+        const soloBtn = trackDiv.querySelector('button[data-action="solo"]');
+        const muteBtn = trackDiv.querySelector('button[data-action="mute"]');
+        soloBtn.classList.toggle('active', track.solo);
+        muteBtn.classList.toggle('active', track.muted);
+      });
     }
 
     const playingNodes = [];
