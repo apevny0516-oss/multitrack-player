@@ -9,8 +9,9 @@
     .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; }
     button.active { background-color: #007bff; color: white; border-color: #007bff; }
-    .progress-container { margin-top: 1rem; }
+    .progress-container { margin-top: 1rem; position: relative; }
     .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
+    .loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
   </style>
 </head>
 <body>
@@ -59,12 +60,14 @@
         loopActive = true;
         loopButton.textContent = 'Clear Loop';
         loopButton.classList.add('active');
+        renderLoopHighlight();
       } else {
         loopActive = false;
         loopStart = null;
         loopEnd = null;
         loopButton.textContent = 'Loop Start';
         loopButton.classList.remove('active');
+        clearLoopHighlight();
       }
     });
 
@@ -79,6 +82,10 @@
     progress.style.width = '100%';
     progress.style.display = 'block';
     progress.style.marginTop = '1rem';
+
+    const loopHighlight = document.createElement('div');
+    loopHighlight.className = 'loop-highlight';
+    progressContainer.appendChild(loopHighlight);
 
     const timeRow = document.createElement('div');
     timeRow.className = 'time';
@@ -188,6 +195,20 @@
     function updateDuration() {
       const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
       totalTimeEl.textContent = formatTime(total);
+    }
+
+    function renderLoopHighlight() {
+      const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+      if (!total || !loopStart || !loopEnd) return;
+      const startPct = loopStart / total * 100;
+      const endPct = loopEnd / total * 100;
+      loopHighlight.style.left = `${startPct}%`;
+      loopHighlight.style.width = `${endPct - startPct}%`;
+      loopHighlight.style.display = 'block';
+    }
+
+    function clearLoopHighlight() {
+      loopHighlight.style.display = 'none';
     }
 
     function updateProgress() {
