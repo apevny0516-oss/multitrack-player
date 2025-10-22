@@ -1,241 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Multitrack Player - Clean Version</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multitrack Player - URL Fix</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
-  <style>
-    body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; display: flex; }
-    #main { flex: 1; }
-    #sectionsPanel { background: white; padding: 1rem; margin-left: 1rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: none; }
-    #sectionsPanel h3 { margin-top: 0; }
-    .section-item { margin-bottom: 0.5rem; cursor: pointer; padding: 0.25rem; border-radius: 4px; }
-    .section-item:hover { background-color: #e9ecef; }
-    .section-active { background-color: #007bff; color: white; }
-    .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; }
-    button.active { background-color: #007bff; color: white; border-color: #007bff; }
-    .progress-container { margin-top: 1rem; position: relative; }
-    .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
-    .loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
-    #loading { font-size: 1.2rem; color: #555; margin-top: 1rem; }
-  </style>
 </head>
 <body>
-  <div id="main">
-    <h2>Multitrack Player</h2>
-    <div>
-      <button id="play">Play</button>
-      <button id="pause">Pause</button>
-      <button id="stop">Stop</button>
-      <button id="loop">Loop Start</button>
-      <button id="toggleSections">Show Sections</button>
-      <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
-    </div>
-
-    <div id="loading">Loading...</div>
-    <div id="progressContainer" class="progress-container"></div>
-    <div id="tracks"></div>
-  </div>
-
-  <div id="sectionsPanel">
-    <h3>Sections</h3>
-    <div id="sectionsList"></div>
-  </div>
-
+  <h2>Multitrack Player</h2>
+  <div id="status">Loading...</div>
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const stems = [];
-    for (const [key, value] of params.entries()) {
-      if (key !== 'markers') stems.push({ name: key, url: value });
-    }
-
-    const loopBtn = document.getElementById('loop');
-    const progressContainer = document.getElementById('progressContainer');
-    const progress = document.createElement('input');
-    progress.type = 'range'; progress.min = 0; progress.max = 1; progress.step = 0.001; progress.value = 0;
-    progress.style.width = '100%'; progress.style.display = 'block'; progress.style.marginTop = '1rem';
-    const loopHighlight = document.createElement('div'); loopHighlight.className = 'loop-highlight';
-    const timeRow = document.createElement('div'); timeRow.className = 'time';
-    const curEl = document.createElement('span'); curEl.textContent = '0:00';
-    const totEl = document.createElement('span'); totEl.textContent = '0:00';
-    timeRow.appendChild(curEl); timeRow.appendChild(totEl);
-    progressContainer.appendChild(loopHighlight); progressContainer.appendChild(progress); progressContainer.appendChild(timeRow);
-
-    const masterVol = document.getElementById('masterVol');
-    const masterGain = new Tone.Gain(1).toDestination();
-
-    const tracks = [];
-    let playing = false, startAt = 0, pausedAt = 0, raf;
-    let loopActive = false, loopStart = null, loopEnd = null;
-
-    const loadingText = document.getElementById('loading');
-
-    masterVol.addEventListener('input', e => masterGain.gain.value = Number(e.target.value));
-
-    async function loadMarkers(url) {
-      try {
-        const res = await fetch(url);
-        const txt = await res.text();
-        const regex = /(\d+:\d+:\d+\.\d+) Textblock:\n([\s\S]*?)(?=\n\d+:\d+:\d+|$)/g;
-        const markers = [];
-        let m;
-        while ((m = regex.exec(txt)) !== null) {
-          const timeParts = m[1].split(':').map(Number);
-          const seconds = timeParts[0]*3600 + timeParts[1]*60 + timeParts[2];
-          const label = m[2].trim();
-          markers.push({ time: seconds, label });
-        }
-        renderSections(markers);
-      } catch (err) {
-        console.warn('Markers file missing or invalid:', err);
+    async function loadPlayer() {
+      const params = new URLSearchParams(window.location.search);
+      const stems = [];
+      for (const [key, value] of params.entries()) {
+        if (key !== 'markers') stems.push({ name: key, url: decodeURIComponent(value) });
       }
-    }
 
-    function renderSections(markers) {
-      const list = document.getElementById('sectionsList');
-      list.innerHTML = '';
-      markers.forEach((m) => {
-        const div = document.createElement('div');
-        div.className = 'section-item';
-        div.textContent = `${m.label} (${fmt(m.time)})`;
-        div.addEventListener('click', () => seekTo(m.time / totalDuration()));
-        list.appendChild(div);
-      });
-    }
-
-    async function loadStems() {
-      loadingText.style.display = 'block';
-      let failedCount = 0;
+      const masterGain = new Tone.Gain(1).toDestination();
+      const tracks = [];
+      const status = document.getElementById('status');
 
       for (const s of stems) {
         try {
-          const player = new Tone.Player({ url: s.url, autostart: false, fadeIn: 0.005, fadeOut: 0.005 });
-          const g = new Tone.Gain(1);
-          player.connect(g);
-          g.connect(masterGain);
+          let validURL = s.url;
+          if (!validURL.match(/^https?:\/\//)) {
+            validURL = window.location.origin + '/' + s.url.replace(/^\//, '');
+          }
+          console.log('Loading', s.name, validURL);
+          const player = new Tone.Player({ url: validURL, autostart: false });
+          player.connect(masterGain);
           await player.load();
-          tracks.push({ name: s.name, player, gainNode: g, duration: player.buffer.duration, muted: false, solo: false, vol: 1 });
+          tracks.push(player);
         } catch (err) {
-          console.error(`Failed to load ${s.name}:`, err);
-          failedCount++;
+          console.error('Failed to load', s.name, err);
+          status.textContent = `Failed to load ${s.name}`;
+          return;
         }
       }
 
-      if (tracks.length > 0) {
-        renderTracks();
-        updateDuration();
-      }
-
-      if (failedCount === 0) {
-        loadingText.style.display = 'none';
-      } else {
-        loadingText.textContent = `${failedCount} stem(s) failed to load (check console).`;
-      }
-
-      const markerParam = params.get('markers');
-      if (markerParam) await loadMarkers(markerParam);
+      status.textContent = 'All stems loaded. Ready to play!';
     }
 
-    function renderTracks() {
-      const container = document.getElementById('tracks');
-      container.innerHTML = '';
-      tracks.forEach((t) => {
-        const div = document.createElement('div');
-        div.className = 'track';
-        div.innerHTML = `
-          <strong>${t.name}</strong><br>
-          <button data-action="solo">Solo</button>
-          <button data-action="mute">Mute</button>
-          <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
-        `;
-        div.querySelectorAll('button, input').forEach(el => {
-          el.addEventListener('click', (e) => handleTrackControl(e, t));
-          el.addEventListener('input', (e) => handleTrackControl(e, t));
-        });
-        container.appendChild(div);
-      });
-      updateButtonStates();
-    }
-
-    function handleTrackControl(e, track) {
-      const act = e.target.dataset.action;
-      if (act === 'gain') { track.vol = Number(e.target.value); track.gainNode.gain.value = track.muted ? 0 : track.vol; }
-      if (act === 'mute') { track.muted = !track.muted; track.gainNode.gain.value = track.muted ? 0 : track.vol; }
-      if (act === 'solo') { track.solo = !track.solo; applySoloMute(); }
-      updateButtonStates();
-    }
-
-    function applySoloMute() {
-      const anySolo = tracks.some(t => t.solo);
-      tracks.forEach(t => {
-        const shouldHear = anySolo ? t.solo : !t.muted;
-        t.gainNode.gain.value = shouldHear ? t.vol : 0;
-      });
-    }
-
-    function updateButtonStates() {
-      document.querySelectorAll('.track').forEach((div, i) => {
-        const t = tracks[i];
-        const soloBtn = div.querySelector('button[data-action="solo"]');
-        const muteBtn = div.querySelector('button[data-action="mute"]');
-        soloBtn.classList.toggle('active', t.solo);
-        muteBtn.classList.toggle('active', t.muted);
-      });
-    }
-
-    function totalDuration() { return tracks.reduce((m, t) => Math.max(m, t.duration || 0), 0); }
-    function updateDuration() { totEl.textContent = fmt(totalDuration()); }
-
-    async function playAll(offset = 0) {
-      await Tone.start();
-      tracks.forEach(t => { try { t.player.stop(); } catch(e){} });
-      const when = "+0.05";
-      tracks.forEach(t => { if (t.player.buffer) t.player.start(when, offset); });
-      playing = true;
-      startAt = Tone.now() - offset;
-      tick();
-    }
-
-    function stopAll() { tracks.forEach(t => { try { t.player.stop(); } catch(e){} }); playing = false; cancelAnimationFrame(raf); }
-    function pauseAll() { pausedAt = Tone.now() - startAt; stopAll(); }
-
-    function tick() {
-      if (!playing) return;
-      const dur = totalDuration();
-      const elapsed = Tone.now() - startAt;
-      progress.value = dur ? Math.min(elapsed / dur, 1) : 0;
-      curEl.textContent = fmt(elapsed);
-      if (loopActive && loopStart != null && loopEnd != null && elapsed >= loopEnd) { playAll(loopStart); return; }
-      if (elapsed < dur) raf = requestAnimationFrame(tick);
-    }
-
-    function seekTo(pct) { const dur = totalDuration(); const sec = pct * dur; pausedAt = sec; if (playing) playAll(sec); else curEl.textContent = fmt(sec); }
-    function fmt(sec) { if (!sec || isNaN(sec)) return '0:00'; const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s.toString().padStart(2,'0')}`; }
-
-    progress.addEventListener('input', e => seekTo(Number(e.target.value)));
-
-    loopBtn.addEventListener('click', () => {
-      const now = Tone.now() - startAt;
-      if (loopStart == null && loopEnd == null) { loopStart = now; loopBtn.textContent = 'Loop End'; }
-      else if (loopStart != null && loopEnd == null) { loopEnd = now; loopActive = true; loopBtn.textContent = 'Clear Loop'; loopBtn.classList.add('active'); }
-      else { loopActive = false; loopStart = null; loopEnd = null; loopBtn.textContent = 'Loop Start'; loopBtn.classList.remove('active'); }
-    });
-
-    document.getElementById('play').onclick = () => { if (!playing) playAll(pausedAt); };
-    document.getElementById('pause').onclick = pauseAll;
-    document.getElementById('stop').onclick = () => { pausedAt = 0; stopAll(); progress.value = 0; curEl.textContent = '0:00'; };
-
-    const toggleBtn = document.getElementById('toggleSections');
-    const panel = document.getElementById('sectionsPanel');
-    toggleBtn.addEventListener('click', () => {
-      const visible = panel.style.display === 'block';
-      panel.style.display = visible ? 'none' : 'block';
-      toggleBtn.textContent = visible ? 'Show Sections' : 'Hide Sections';
-    });
-
-    loadStems();
+    loadPlayer();
   </script>
 </body>
 </html>
