@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Multitrack Player with Bookmarks</title>
+  <title>Multitrack Player with URL-based Markers</title>
   <style>
     body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
     .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -26,14 +26,19 @@
 
   <div id="progressContainer" class="progress-container"></div>
   <div id="tracks"></div>
-  <input type="file" id="textFileInput" accept=".txt">
   <div id="bookmarksPanel" style="margin-top:1rem;"></div>
 
   <script>
     const params = new URLSearchParams(window.location.search);
     const stems = [];
+    let markersFile = null;
+
     for (const [key, value] of params.entries()) {
-      stems.push({ name: key, url: value });
+      if (key.toLowerCase() === 'markers' || key.toLowerCase() === 'lyrics' || key.toLowerCase() === 'text') {
+        markersFile = value;
+      } else {
+        stems.push({ name: key, url: value });
+      }
     }
 
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -110,6 +115,46 @@
       }
       renderTracks();
       updateDuration();
+      if (markersFile) loadMarkersFile(markersFile);
+    }
+
+    async function loadMarkersFile(url) {
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        const sections = parseTextBlocks(text);
+        renderBookmarks(sections);
+      } catch (e) {
+        console.error('Error loading markers file', e);
+      }
+    }
+
+    function parseTextBlocks(text) {
+      const regex = /\[(.*?)\]\n([\s\S]*?)(?=\n\[|$)/g;
+      const results = [];
+      let match;
+      let time = 0;
+      while ((match = regex.exec(text)) !== null) {
+        results.push({ label: match[1].trim(), content: match[2].trim(), time });
+        time += 15;
+      }
+      return results;
+    }
+
+    function renderBookmarks(sections) {
+      const panel = document.getElementById('bookmarksPanel');
+      panel.innerHTML = '<h3>Bookmarks</h3>';
+      sections.forEach(section => {
+        const btn = document.createElement('button');
+        btn.textContent = `${section.label}`;
+        btn.style.display = 'block';
+        btn.onclick = () => seekTo(section.time / getTotalDuration());
+        panel.appendChild(btn);
+      });
+    }
+
+    function getTotalDuration() {
+      return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
     }
 
     function renderTracks() {
@@ -155,7 +200,7 @@
     function startPlayback(offset = 0) {
       const soloed = trackData.some(t => t.solo);
       stopPlayback();
-      trackData.forEach((t) => {
+      trackData.forEach(t => {
         if (!t.buffer) return;
         const src = ctx.createBufferSource();
         src.buffer = t.buffer;
@@ -192,7 +237,7 @@
     }
 
     function updateDuration() {
-      const total = trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+      const total = getTotalDuration();
       totalTimeEl.textContent = formatTime(total);
     }
 
@@ -257,46 +302,6 @@
       currentTimeEl.textContent = '0:00';
     };
     document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
-
-    // --- BOOKMARK PARSER ---
-
-    const bookmarksPanel = document.getElementById('bookmarksPanel');
-    const textInput = document.getElementById('textFileInput');
-
-    textInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const text = await file.text();
-      const sections = parseTextBlocks(text);
-      renderBookmarks(sections);
-    });
-
-    function parseTextBlocks(text) {
-      const regex = /\[(.*?)\]\n([\s\S]*?)(?=\n\[|$)/g;
-      const results = [];
-      let match;
-      let time = 0;
-      while ((match = regex.exec(text)) !== null) {
-        results.push({ label: match[1].trim(), content: match[2].trim(), time });
-        time += 15; // placeholder timestamps
-      }
-      return results;
-    }
-
-    function renderBookmarks(sections) {
-      bookmarksPanel.innerHTML = '<h3>Bookmarks</h3>';
-      sections.forEach(section => {
-        const btn = document.createElement('button');
-        btn.textContent = `${section.label}`;
-        btn.style.display = 'block';
-        btn.onclick = () => seekTo(section.time / getTotalDuration());
-        bookmarksPanel.appendChild(btn);
-      });
-    }
-
-    function getTotalDuration() {
-      return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
-    }
 
     loadStems();
   </script>
