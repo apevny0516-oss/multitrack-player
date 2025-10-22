@@ -13,9 +13,7 @@
     .progress-container { margin-top: 1rem; position: relative; }
     .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
     .loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
-    input[type=range]#pitch { width: 200px; }
     #loading { font-size: 1.2rem; color: #555; margin-top: 1rem; }
-    #pitchLabel { margin-left: 8px; font-weight: bold; color: #333; }
     .marker { position: absolute; top: 50%; width: 6px; height: 6px; background: #ff5722; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; }
   </style>
 </head>
@@ -26,13 +24,6 @@
     <button id="pause">Pause</button>
     <button id="stop">Stop</button>
     <button id="loop">Loop Start</button>
-    <label>Pitch (Semitones)
-      <input id="pitch" type="range" min="-12" max="12" step="1" value="0" list="pitchMarks">
-      <datalist id="pitchMarks">
-        <option value="-12"><option value="-11"><option value="-10"><option value="-9"><option value="-8"><option value="-7"><option value="-6"><option value="-5"><option value="-4"><option value="-3"><option value="-2"><option value="-1"><option value="0"><option value="1"><option value="2"><option value="3"><option value="4"><option value="5"><option value="6"><option value="7"><option value="8"><option value="9"><option value="10"><option value="11"><option value="12">
-      </datalist>
-      <span id="pitchLabel">0</span>
-    </label>
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
 
@@ -60,11 +51,7 @@
     progressContainer.appendChild(loopHighlight); progressContainer.appendChild(progress); progressContainer.appendChild(timeRow);
 
     const masterVol = document.getElementById('masterVol');
-    const pitchSlider = document.getElementById('pitch');
-    const pitchLabel = document.getElementById('pitchLabel');
-
     const masterGain = new Tone.Gain(1).toDestination();
-    const pitchShift = new Tone.PitchShift(0);
 
     const tracks = [];
     let playing = false, startAt = 0, pausedAt = 0, raf;
@@ -73,40 +60,6 @@
     const loadingText = document.getElementById('loading');
 
     masterVol.addEventListener('input', e => masterGain.gain.value = Number(e.target.value));
-
-    function updatePitchRouting() {
-      if (pitchShift.pitch === 0) {
-        tracks.forEach(t => {
-          t.gainNode.disconnect();
-          t.gainNode.connect(masterGain);
-        });
-      } else {
-        tracks.forEach(t => {
-          const n = t.name.toLowerCase();
-          t.gainNode.disconnect();
-          if (n !== 'drums' && n !== 'metronome') {
-            t.gainNode.connect(pitchShift);
-            pitchShift.connect(masterGain);
-          } else {
-            t.gainNode.connect(masterGain);
-          }
-        });
-      }
-    }
-
-    pitchSlider.addEventListener('input', e => {
-      const val = Number(e.target.value);
-      pitchShift.pitch = val;
-      pitchLabel.textContent = val > 0 ? `+${val}` : val;
-      updatePitchRouting();
-    });
-
-    pitchSlider.addEventListener('dblclick', () => {
-      pitchShift.pitch = 0;
-      pitchSlider.value = 0;
-      pitchLabel.textContent = '0';
-      updatePitchRouting();
-    });
 
     async function loadMarkers(url) {
       const res = await fetch(url);
@@ -149,7 +102,6 @@
       renderTracks();
       updateDuration();
       loadingText.style.display = 'none';
-      updatePitchRouting();
 
       const markerParam = params.get('markers');
       if (markerParam) await loadMarkers(markerParam);
