@@ -16,6 +16,7 @@
     input[type=range]#pitch { width: 200px; }
     #loading { font-size: 1.2rem; color: #555; margin-top: 1rem; }
     #pitchLabel { margin-left: 8px; font-weight: bold; color: #333; }
+    .marker { position: absolute; top: 50%; width: 6px; height: 6px; background: #ff5722; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; }
   </style>
 </head>
 <body>
@@ -42,7 +43,9 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const stems = [];
-    for (const [key, value] of params.entries()) stems.push({ name: key, url: value });
+    for (const [key, value] of params.entries()) {
+      if (key !== 'markers') stems.push({ name: key, url: value });
+    }
 
     const loopBtn = document.getElementById('loop');
     const progressContainer = document.getElementById('progressContainer');
@@ -74,13 +77,8 @@
     function updatePitchRouting() {
       if (pitchShift.pitch === 0) {
         tracks.forEach(t => {
-          const n = t.name.toLowerCase();
           t.gainNode.disconnect();
-          if (n !== 'drums' && n !== 'metronome') {
-            t.gainNode.connect(masterGain);
-          } else {
-            t.gainNode.connect(masterGain);
-          }
+          t.gainNode.connect(masterGain);
         });
       } else {
         tracks.forEach(t => {
@@ -110,13 +108,39 @@
       updatePitchRouting();
     });
 
+    async function loadMarkers(url) {
+      const res = await fetch(url);
+      const txt = await res.text();
+      const regex = /(\d+:\d+:\d+\.\d+) Textblock:\n([\s\S]*?)(?=\n\d+:\d+:\d+|$)/g;
+      const markers = [];
+      let m;
+      while ((m = regex.exec(txt)) !== null) {
+        const timeParts = m[1].split(':').map(Number);
+        const seconds = timeParts[0]*3600 + timeParts[1]*60 + timeParts[2];
+        const label = m[2].trim();
+        markers.push({ time: seconds, label });
+      }
+      renderMarkers(markers);
+    }
+
+    function renderMarkers(markers) {
+      const dur = totalDuration();
+      markers.forEach(m => {
+        const dot = document.createElement('div');
+        dot.className = 'marker';
+        dot.style.left = `${(m.time / dur) * 100}%`;
+        dot.title = m.label;
+        dot.addEventListener('click', () => seekTo(m.time / dur));
+        progressContainer.appendChild(dot);
+      });
+    }
+
     async function loadStems() {
       loadingText.style.display = 'block';
       for (const s of stems) {
         const player = new Tone.Player({ url: s.url, autostart: false, fadeIn: 0.005, fadeOut: 0.005 });
         const g = new Tone.Gain(1);
         player.connect(g);
-        const n = s.name.toLowerCase();
         g.connect(masterGain);
         tracks.push({ name: s.name, player, gainNode: g, duration: 0, muted: false, solo: false, vol: 1 });
       }
@@ -126,6 +150,9 @@
       updateDuration();
       loadingText.style.display = 'none';
       updatePitchRouting();
+
+      const markerParam = params.get('markers');
+      if (markerParam) await loadMarkers(markerParam);
     }
 
     function renderTracks() {
