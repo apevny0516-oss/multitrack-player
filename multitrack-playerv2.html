@@ -13,6 +13,8 @@
     .progress-container { margin-top: 1rem; position: relative; }
     .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
     .loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
+    input[type=range]#pitch { width: 200px; }
+    #loading { font-size: 1.2rem; color: #555; margin-top: 1rem; }
   </style>
 </head>
 <body>
@@ -22,20 +24,24 @@
     <button id="pause">Pause</button>
     <button id="stop">Stop</button>
     <button id="loop">Loop Start</button>
-    <label>Pitch (Semitones) <input id="pitch" type="range" min="-12" max="12" step="1" value="0"></label>
+    <label>Pitch (Semitones)
+      <input id="pitch" type="range" min="-12" max="12" step="1" value="0" list="pitchMarks">
+      <datalist id="pitchMarks">
+        <option value="-12"><option value="-11"><option value="-10"><option value="-9"><option value="-8"><option value="-7"><option value="-6"><option value="-5"><option value="-4"><option value="-3"><option value="-2"><option value="-1"><option value="0"><option value="1"><option value="2"><option value="3"><option value="4"><option value="5"><option value="6"><option value="7"><option value="8"><option value="9"><option value="10"><option value="11"><option value="12">
+      </datalist>
+    </label>
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
 
+  <div id="loading">Loading...</div>
   <div id="progressContainer" class="progress-container"></div>
   <div id="tracks"></div>
 
   <script>
-    // --- Query params -> stems list ---
     const params = new URLSearchParams(window.location.search);
     const stems = [];
     for (const [key, value] of params.entries()) stems.push({ name: key, url: value });
 
-    // --- UI elements ---
     const loopBtn = document.getElementById('loop');
     const progressContainer = document.getElementById('progressContainer');
     const progress = document.createElement('input');
@@ -51,36 +57,38 @@
     const masterVol = document.getElementById('masterVol');
     const pitchSlider = document.getElementById('pitch');
 
-    // --- Tone routing (robust + CORS friendly) ---
     const masterGain = new Tone.Gain(1).toDestination();
     const pitchShift = new Tone.PitchShift(0).connect(masterGain);
 
-    // Per-track: Player -> TrackGain -> (PitchShift or masterGain)
-    const tracks = []; // {name, player, gainNode, duration}
-
+    const tracks = [];
     let playing = false, startAt = 0, pausedAt = 0, raf;
     let loopActive = false, loopStart = null, loopEnd = null;
+
+    const loadingText = document.getElementById('loading');
 
     masterVol.addEventListener('input', e => masterGain.gain.value = Number(e.target.value));
     pitchSlider.addEventListener('input', e => pitchShift.pitch = Number(e.target.value));
 
+    pitchSlider.addEventListener('dblclick', () => {
+      pitchShift.pitch = 0;
+      pitchSlider.value = 0;
+    });
+
     async function loadStems() {
-      // Create players with explicit crossOrigin and no autostart
+      loadingText.style.display = 'block';
       for (const s of stems) {
         const player = new Tone.Player({ url: s.url, autostart: false, fadeIn: 0.005, fadeOut: 0.005 });
-        // IMPORTANT: route via a per-track gain for mute/solo/volume
         const g = new Tone.Gain(1);
         player.connect(g);
         const n = s.name.toLowerCase();
         if (n !== 'drums' && n !== 'metronome') g.connect(pitchShift); else g.connect(masterGain);
         tracks.push({ name: s.name, player, gainNode: g, duration: 0, muted: false, solo: false, vol: 1 });
       }
-      // Wait for all audio buffers to load
       await Tone.loaded();
-      // Fill durations
       tracks.forEach(t => { t.duration = t.player.buffer ? t.player.buffer.duration : 0; });
       renderTracks();
       updateDuration();
+      loadingText.style.display = 'none';
     }
 
     function renderTracks() {
@@ -131,14 +139,11 @@
     }
 
     function totalDuration() { return tracks.reduce((m, t) => Math.max(m, t.duration || 0), 0); }
-
     function updateDuration() { totEl.textContent = fmt(totalDuration()); }
 
     async function playAll(offset = 0) {
-      await Tone.start(); // resume AudioContext on first user gesture
-      // stop any playing
+      await Tone.start();
       tracks.forEach(t => { try { t.player.stop(); } catch(e){} });
-      // schedule a tiny future start for tight sync
       const when = "+0.05";
       tracks.forEach(t => { if (t.player.buffer) t.player.start(when, offset); });
       playing = true;
@@ -146,11 +151,7 @@
       tick();
     }
 
-    function stopAll() {
-      tracks.forEach(t => { try { t.player.stop(); } catch(e){} });
-      playing = false; cancelAnimationFrame(raf);
-    }
-
+    function stopAll() { tracks.forEach(t => { try { t.player.stop(); } catch(e){} }); playing = false; cancelAnimationFrame(raf); }
     function pauseAll() { pausedAt = Tone.now() - startAt; stopAll(); }
 
     function tick() {
@@ -163,22 +164,9 @@
       if (elapsed < dur) raf = requestAnimationFrame(tick);
     }
 
-    function seekTo(pct) {
-      const dur = totalDuration();
-      const sec = pct * dur; pausedAt = sec;
-      if (playing) playAll(sec); else curEl.textContent = fmt(sec);
-    }
-
-    function fmt(sec) {
-      if (!sec || isNaN(sec)) return '0:00';
-      const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s.toString().padStart(2,'0')}`;
-    }
-
-    function renderLoopHighlight() {
-      const dur = totalDuration(); if (!dur || loopStart == null || loopEnd == null) return;
-      const a = loopStart / dur * 100, b = loopEnd / dur * 100;
-      loopHighlight.style.left = `${a}%`; loopHighlight.style.width = `${Math.max(b - a, 0)}%`; loopHighlight.style.display = 'block';
-    }
+    function seekTo(pct) { const dur = totalDuration(); const sec = pct * dur; pausedAt = sec; if (playing) playAll(sec); else curEl.textContent = fmt(sec); }
+    function fmt(sec) { if (!sec || isNaN(sec)) return '0:00'; const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s.toString().padStart(2,'0')}`; }
+    function renderLoopHighlight() { const dur = totalDuration(); if (!dur || loopStart == null || loopEnd == null) return; const a = loopStart / dur * 100, b = loopEnd / dur * 100; loopHighlight.style.left = `${a}%`; loopHighlight.style.width = `${Math.max(b - a, 0)}%`; loopHighlight.style.display = 'block'; }
     function clearLoopHighlight() { loopHighlight.style.display = 'none'; }
 
     progress.addEventListener('input', e => seekTo(Number(e.target.value)));
