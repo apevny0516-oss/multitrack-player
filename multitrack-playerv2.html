@@ -15,6 +15,7 @@
     .loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
     input[type=range]#pitch { width: 200px; }
     #loading { font-size: 1.2rem; color: #555; margin-top: 1rem; }
+    #pitchLabel { margin-left: 8px; font-weight: bold; color: #333; }
   </style>
 </head>
 <body>
@@ -29,6 +30,7 @@
       <datalist id="pitchMarks">
         <option value="-12"><option value="-11"><option value="-10"><option value="-9"><option value="-8"><option value="-7"><option value="-6"><option value="-5"><option value="-4"><option value="-3"><option value="-2"><option value="-1"><option value="0"><option value="1"><option value="2"><option value="3"><option value="4"><option value="5"><option value="6"><option value="7"><option value="8"><option value="9"><option value="10"><option value="11"><option value="12">
       </datalist>
+      <span id="pitchLabel">0</span>
     </label>
     <label>Master Volume <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1"></label>
   </div>
@@ -56,6 +58,7 @@
 
     const masterVol = document.getElementById('masterVol');
     const pitchSlider = document.getElementById('pitch');
+    const pitchLabel = document.getElementById('pitchLabel');
 
     const masterGain = new Tone.Gain(1).toDestination();
     const pitchShift = new Tone.PitchShift(0).connect(masterGain);
@@ -67,11 +70,17 @@
     const loadingText = document.getElementById('loading');
 
     masterVol.addEventListener('input', e => masterGain.gain.value = Number(e.target.value));
-    pitchSlider.addEventListener('input', e => pitchShift.pitch = Number(e.target.value));
+
+    pitchSlider.addEventListener('input', e => {
+      const val = Number(e.target.value);
+      pitchShift.pitch = val;
+      pitchLabel.textContent = val > 0 ? `+${val}` : val;
+    });
 
     pitchSlider.addEventListener('dblclick', () => {
       pitchShift.pitch = 0;
       pitchSlider.value = 0;
+      pitchLabel.textContent = '0';
     });
 
     async function loadStems() {
