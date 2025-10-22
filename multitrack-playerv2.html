@@ -3,29 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multitrack Player - Webhost Fix</title>
+  <title>Multitrack Player - Selfhost Debug</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
 </head>
 <body>
-  <h2>Multitrack Player</h2>
+  <h2>Multitrack Player Debug</h2>
   <div id="status">Loading...</div>
 
   <script>
-    // Fixes relative or malformed URLs for self-hosted files
-    function normalizeURL(url) {
-      if (!url.match(/^https?:\/\//)) {
-        // if it's a relative path, prepend current origin
-        return `${window.location.origin}/${url.replace(/^\//, '')}`;
+    async function testAudioAccess(url) {
+      try {
+        const res = await fetch(url, { method: 'HEAD' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return true;
+      } catch (err) {
+        console.error('HEAD request failed for', url, err);
+        return false;
       }
-      // ensure https:// prefix and correct encoding
-      return decodeURIComponent(url.trim());
     }
 
     async function loadPlayer() {
       const params = new URLSearchParams(window.location.search);
       const stems = [];
       for (const [key, value] of params.entries()) {
-        if (key !== 'markers') stems.push({ name: key, url: normalizeURL(value) });
+        if (key !== 'markers') stems.push({ name: key, url: decodeURIComponent(value) });
       }
 
       const masterGain = new Tone.Gain(1).toDestination();
@@ -33,20 +34,27 @@
       const tracks = [];
 
       for (const s of stems) {
+        const accessible = await testAudioAccess(s.url);
+        if (!accessible) {
+          status.textContent = `❌ Cannot access ${s.name}: ${s.url}`;
+          return;
+        }
+
         try {
-          console.log('Loading', s.name, s.url);
+          console.log('Attempting to load', s.name, s.url);
           const player = new Tone.Player({ url: s.url, autostart: false });
           player.connect(masterGain);
           await player.load();
           tracks.push(player);
+          console.log(`✅ Loaded ${s.name}`);
         } catch (err) {
-          console.error('Failed to load', s.name, err);
-          status.textContent = `❌ Failed to load ${s.name}: ${s.url}`;
+          console.error(`❌ Failed to decode ${s.name}:`, err);
+          status.textContent = `❌ Failed to decode ${s.name}. Check console.`;
           return;
         }
       }
 
-      status.textContent = '✅ All stems loaded. Ready to play!';
+      status.textContent = '✅ All stems accessible and decoded. Ready to play!';
     }
 
     loadPlayer();
