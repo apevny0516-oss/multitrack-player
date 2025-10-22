@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Multitrack Player</title>
+  <title>Multitrack Player (Debug Version)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
   <style>
     body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; display: flex; }
@@ -93,7 +93,7 @@
     function renderSections(markers) {
       const list = document.getElementById('sectionsList');
       list.innerHTML = '';
-      markers.forEach((m, i) => {
+      markers.forEach((m) => {
         const div = document.createElement('div');
         div.className = 'section-item';
         div.textContent = `${m.label} (${fmt(m.time)})`;
@@ -105,13 +105,27 @@
     async function loadStems() {
       loadingText.style.display = 'block';
       for (const s of stems) {
-        const player = new Tone.Player({ url: s.url, autostart: false, fadeIn: 0.005, fadeOut: 0.005 });
-        const g = new Tone.Gain(1);
-        player.connect(g);
-        g.connect(masterGain);
-        tracks.push({ name: s.name, player, gainNode: g, duration: 0, muted: false, solo: false, vol: 1 });
+        try {
+          console.log('Loading stem:', s.name, s.url);
+          const player = new Tone.Player({ url: s.url, autostart: false, fadeIn: 0.005, fadeOut: 0.005 });
+          const g = new Tone.Gain(1);
+          player.connect(g);
+          g.connect(masterGain);
+          tracks.push({ name: s.name, player, gainNode: g, duration: 0, muted: false, solo: false, vol: 1 });
+        } catch (err) {
+          console.error('Error setting up stem', s.name, err);
+        }
       }
-      await Tone.loaded();
+
+      try {
+        await Promise.all(tracks.map(t => t.player.load()));
+        console.log('All stems loaded');
+      } catch (err) {
+        console.error('Error loading stems:', err);
+        loadingText.textContent = 'Error loading stems. Check console for details.';
+        return;
+      }
+
       tracks.forEach(t => { t.duration = t.player.buffer ? t.player.buffer.duration : 0; });
       renderTracks();
       updateDuration();
@@ -219,4 +233,6 @@
     });
 
     loadStems();
-  </script
+  </script>
+</body>
+</html>
