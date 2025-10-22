@@ -61,7 +61,7 @@
     const pitchLabel = document.getElementById('pitchLabel');
 
     const masterGain = new Tone.Gain(1).toDestination();
-    const pitchShift = new Tone.PitchShift(0).connect(masterGain);
+    const pitchShift = new Tone.PitchShift(0);
 
     const tracks = [];
     let playing = false, startAt = 0, pausedAt = 0, raf;
@@ -71,16 +71,43 @@
 
     masterVol.addEventListener('input', e => masterGain.gain.value = Number(e.target.value));
 
+    function updatePitchRouting() {
+      if (pitchShift.pitch === 0) {
+        tracks.forEach(t => {
+          const n = t.name.toLowerCase();
+          t.gainNode.disconnect();
+          if (n !== 'drums' && n !== 'metronome') {
+            t.gainNode.connect(masterGain);
+          } else {
+            t.gainNode.connect(masterGain);
+          }
+        });
+      } else {
+        tracks.forEach(t => {
+          const n = t.name.toLowerCase();
+          t.gainNode.disconnect();
+          if (n !== 'drums' && n !== 'metronome') {
+            t.gainNode.connect(pitchShift);
+            pitchShift.connect(masterGain);
+          } else {
+            t.gainNode.connect(masterGain);
+          }
+        });
+      }
+    }
+
     pitchSlider.addEventListener('input', e => {
       const val = Number(e.target.value);
       pitchShift.pitch = val;
       pitchLabel.textContent = val > 0 ? `+${val}` : val;
+      updatePitchRouting();
     });
 
     pitchSlider.addEventListener('dblclick', () => {
       pitchShift.pitch = 0;
       pitchSlider.value = 0;
       pitchLabel.textContent = '0';
+      updatePitchRouting();
     });
 
     async function loadStems() {
@@ -90,7 +117,7 @@
         const g = new Tone.Gain(1);
         player.connect(g);
         const n = s.name.toLowerCase();
-        if (n !== 'drums' && n !== 'metronome') g.connect(pitchShift); else g.connect(masterGain);
+        g.connect(masterGain);
         tracks.push({ name: s.name, player, gainNode: g, duration: 0, muted: false, solo: false, vol: 1 });
       }
       await Tone.loaded();
@@ -98,6 +125,7 @@
       renderTracks();
       updateDuration();
       loadingText.style.display = 'none';
+      updatePitchRouting();
     }
 
     function renderTracks() {
