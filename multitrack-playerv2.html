@@ -3,43 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multitrack Player - URL Fix</title>
+  <title>Multitrack Player - Webhost Fix</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.min.js"></script>
 </head>
 <body>
   <h2>Multitrack Player</h2>
   <div id="status">Loading...</div>
+
   <script>
+    // Fixes relative or malformed URLs for self-hosted files
+    function normalizeURL(url) {
+      if (!url.match(/^https?:\/\//)) {
+        // if it's a relative path, prepend current origin
+        return `${window.location.origin}/${url.replace(/^\//, '')}`;
+      }
+      // ensure https:// prefix and correct encoding
+      return decodeURIComponent(url.trim());
+    }
+
     async function loadPlayer() {
       const params = new URLSearchParams(window.location.search);
       const stems = [];
       for (const [key, value] of params.entries()) {
-        if (key !== 'markers') stems.push({ name: key, url: decodeURIComponent(value) });
+        if (key !== 'markers') stems.push({ name: key, url: normalizeURL(value) });
       }
 
       const masterGain = new Tone.Gain(1).toDestination();
-      const tracks = [];
       const status = document.getElementById('status');
+      const tracks = [];
 
       for (const s of stems) {
         try {
-          let validURL = s.url;
-          if (!validURL.match(/^https?:\/\//)) {
-            validURL = window.location.origin + '/' + s.url.replace(/^\//, '');
-          }
-          console.log('Loading', s.name, validURL);
-          const player = new Tone.Player({ url: validURL, autostart: false });
+          console.log('Loading', s.name, s.url);
+          const player = new Tone.Player({ url: s.url, autostart: false });
           player.connect(masterGain);
           await player.load();
           tracks.push(player);
         } catch (err) {
           console.error('Failed to load', s.name, err);
-          status.textContent = `Failed to load ${s.name}`;
+          status.textContent = `❌ Failed to load ${s.name}: ${s.url}`;
           return;
         }
       }
 
-      status.textContent = 'All stems loaded. Ready to play!';
+      status.textContent = '✅ All stems loaded. Ready to play!';
     }
 
     loadPlayer();
