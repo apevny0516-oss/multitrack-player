@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Multitrack Player (Responsive Volume Layout)</title>
+<title>Multitrack Player (Original Button Size)</title>
 <style>
 body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
 .track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 1.2rem; }
+button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 1rem; }
 button.active { background-color: #007bff; color: white; border-color: #007bff; }
 .progress-container { margin-top: 1rem; position: relative; }
 .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
@@ -62,6 +62,7 @@ align-items: flex-start;
 <div id="progressContainer" class="progress-container"></div>
 <div id="tracks"></div>
 <div id="bookmarksPanel" style="margin-top:1rem;"></div>
+
  
   <script>
     const params = new URLSearchParams(window.location.search);
