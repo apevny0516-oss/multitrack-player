@@ -110,6 +110,21 @@ let loopActive = false;
 let loopStart = null;
 let loopEnd = null;
 
+// Unlock iOS audio (silent mode workaround)
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  if (ctx.state === 'suspended') ctx.resume();
+  audioUnlocked = true;
+}
+document.body.addEventListener('touchstart', unlockAudio, { once: true });
+document.body.addEventListener('click', unlockAudio, { once: true });
+
 const loopButton = document.getElementById('loop');
 loopButton.addEventListener('click', () => {
   const current = ctx.currentTime - startAt;
