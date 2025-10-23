@@ -91,9 +91,11 @@ if (titleParam) {
   document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
 }
 
+// ✅ Fixed: only skip title, not markers
 for (const [key, value] of params.entries()) {
-  if (['markers', 'lyrics', 'text', 'title'].includes(key.toLowerCase())) continue;
-  if (['markers', 'lyrics', 'text'].includes(key.toLowerCase())) {
+  const k = key.toLowerCase();
+  if (k === 'title') continue;
+  if (['markers', 'lyrics', 'text'].includes(k)) {
     markersFile = value;
   } else {
     stems.push({ name: key, url: value });
