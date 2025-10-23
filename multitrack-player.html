@@ -53,13 +53,16 @@ font-size: 1.5rem;
 font-weight: bold;
 color: #333;
 z-index: 999;
+flex-direction: column;
 }
 </style>
 </head>
 <body>
 <h2 id="pageTitle">Multitrack Player</h2>
 
-<div id="loadingOverlay">Now Loading...</div>
+<div id="loadingOverlay">
+  <div id="loadingText">Now Loading...</div>
+</div>
 
 <div class="controls">
 <button id="play" title="Play">▶️</button>
@@ -173,21 +176,32 @@ timeRow.appendChild(totalTimeEl);
 progressContainer.appendChild(progress);
 progressContainer.appendChild(timeRow);
 
+// ✅ Parallel loading with progress counter
 async function loadStems() {
   const loadingOverlay = document.getElementById("loadingOverlay");
-  for (const s of stems) {
+  const loadingText = document.getElementById("loadingText");
+  let loaded = 0;
+  const total = stems.length;
+
+  await Promise.all(stems.map(async (s) => {
     try {
       const res = await fetch(s.url);
       const arr = await res.arrayBuffer();
       const buf = await ctx.decodeAudioData(arr);
       trackData.push({ ...s, buffer: buf, gain: 1, muted: false, solo: false });
+      loaded++;
+      loadingText.textContent = `Loading ${loaded} of ${total}...`;
     } catch (e) {
       console.error('Error loading', s.url, e);
+      loaded++;
+      loadingText.textContent = `Loading ${loaded} of ${total} (error)`;
     }
-  }
+  }));
+
+  loadingText.textContent = "Finalizing...";
   renderTracks();
   updateDuration();
-  if (markersFile) loadMarkersFile(markersFile);
+  if (markersFile) await loadMarkersFile(markersFile);
   loadingOverlay.style.display = "none";
 }
 
