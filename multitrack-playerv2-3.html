@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multitrack Player (Original Button Size) — v2.3</title>
+<style>
+body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
+.track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 1rem; }
+button.active { background-color: #007bff; color: white; border-color: #007bff; }
+.progress-container { margin-top: 1rem; position: relative; }
+.time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
+.loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
+#bookmarksPanel h3 { margin-bottom: 0.75rem; }
+#bookmarksPanel button {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.volume-line { flex-basis: 100%; display: flex; flex-direction: row; align-items: center; gap: 0.5rem; }
+@media (max-width: 600px) {
+  .volume-line { flex-direction: column; align-items: flex-start; }
+}
+/* Marker editor styles */
+#markerEditor { display:none; background: #fff; border-radius: 8px; padding: 1rem; margin-top: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+#markerEditor h3 { margin: 0 0 0.5rem 0; }
+#markerList { margin-top: 0.5rem; }
+.marker-row { display: grid; grid-template-columns: 8ch 1fr auto auto; gap: 0.5rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px dashed #eee; }
+.marker-row input[type="text"] { width: 100%; padding: 0.25rem 0.4rem; }
+.marker-actions button { margin-left: 0.25rem; }
+.helper { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+.small { font-size: 0.9rem; color: #666; }
+</style>
+</head>
+<body>
+<h2>Multitrack Player</h2>
+<div class="controls">
+  <button id="play" title="Play">▶️</button>
+  <button id="pause" title="Pause">⏸️</button>
+  <button id="stop" title="Stop">⏹️</button>
+  <button id="loop">Loop Start</button>
+  <div class="volume-line">
+    <label for="masterVol">Master Volume</label>
+    <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
+  </div>
+</div>
+
+<div id="progressContainer" class="progress-container"></div>
+<div id="tracks"></div>
+<div id="bookmarksPanel" style="margin-top:1rem;"></div>
+
+<!-- Teacher-only Marker Editor (visible only with ?edit=true) -->
+<div id="markerEditor">
+  <h3>Marker Editor <span class="small">(teacher mode)</span></h3>
+  <div>
+    <button id="addMarkerBtn">➕ Add Marker (now)</button>
+    <button id="downloadMarkersBtn">💾 Download Markers (.txt)</button>
+    <button id="uploadMarkersBtn">📤 Upload Markers (.txt)</button>
+    <input id="uploadMarkersInput" type="file" accept=".txt,text/plain" style="display:none;" />
+    <div class="helper">Add while playing, then rename or delete below. Download saves in Transcribe! format.</div>
+  </div>
+  <div id="markerList"></div>
+</div>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const stems = [];
+  let markersFile = null;
+  const isEdit = params.get('edit') === 'true';
+
+  for (const [key, value] of params.entries()) {
+    if (['markers', 'lyrics', 'text'].includes(key.toLowerCase())) {
+      markersFile = value;
+    } else if (key.toLowerCase() !== 'edit') {
+      stems.push({ name: key, url: value });
+    }
+  }
+
+  // Audio & playback state
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const masterGain = ctx.createGain();
+  masterGain.connect(ctx.destination);
+
+  const trackData = [];
+  let playingNodes = [];
+  let startAt = 0, pausedAt = 0, playing = false;
+  let raf;
+
+  // Loop state
+  let loopActive = false;
+  let loopStart = null;
+  let loopEnd = null;
+
+  // Marker state (canonical list used by both editor & bookmarks)
+  let markerSections = []; // [{label, time}]
+
+  const loopButton = document.getElementById('loop');
+  loopButton.addEventListener('click', () => {
+    const current = ctx.currentTime - startAt;
+    if (!loopStart && !loopEnd) {
+      loopStart = current;
+      loopButton.textContent = 'Loop End';
+    } else if (loopStart && !loopEnd) {
+      loopEnd = current;
+      loopActive = true;
+      loopButton.textContent = 'Clear Loop';
+      loopButton.classList.add('active');
+      renderLoopHighlight();
+    } else {
+      loopActive = false;
+      loopStart = null;
+      loopEnd = null;
+      loopButton.textContent = 'Loop Start';
+      loopButton.classList.remove('active');
+      clearLoopHighlight();
+    }
+  });
+
+  const progressContainer = document.getElementById('progressContainer');
+  const progress = document.createElement('input');
+  progress.type = 'range';
+  progress.min = 0;
+  progress.max = 1;
+  progress.step = 0.001;
+  progress.value = 0;
+  progress.style.width = '100%';
+  progress.style.display = 'block';
+  progress.style.marginTop = '1rem';
+
+  const loopHighlight = document.createElement('div');
+  loopHighlight.className = 'loop-highlight';
+  progressContainer.appendChild(loopHighlight);
+
+  const timeRow = document.createElement('div');
+  timeRow.className = 'time';
+  const currentTimeEl = document.createElement('span');
+  currentTimeEl.textContent = '0:00';
+  const totalTimeEl = document.createElement('span');
+  totalTimeEl.textContent = '0:00';
+  timeRow.appendChild(currentTimeEl);
+  timeRow.appendChild(totalTimeEl);
+  progressContainer.appendChild(progress);
+  progressContainer.appendChild(timeRow);
+
+  async function loadStems() {
+    for (const s of stems) {
+      try {
+        const res = await fetch(s.url);
+        const arr = await res.arrayBuffer();
+        const buf = await ctx.decodeAudioData(arr);
+        trackData.push({ ...s, buffer: buf, gain: 1, muted: false, solo: false });
+      } catch (e) {
+        console.error('Error loading', s.url, e);
+      }
+    }
+    renderTracks();
+    updateDuration();
+    // Show editor if in edit mode
+    if (isEdit) document.getElementById('markerEditor').style.display = 'block';
+    if (markersFile) {
+      await loadMarkersFile(markersFile);
+    } else {
+      // No file provided; still render empty panels
+      renderBookmarks(markerSections);
+      renderMarkerEditorList();
+    }
+  }
+
+  async function loadMarkersFile(url) {
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+      markerSections = parseTimecodedMarkers(text);
+      // sort by time just in case
+      markerSections.sort((a,b)=>a.time-b.time);
+      renderBookmarks(markerSections);
+      renderMarkerEditorList();
+    } catch (e) {
+      console.error('Error loading markers file', e);
+      renderBookmarks([]);
+      renderMarkerEditorList();
+    }
+  }
+
+  function parseTimecodedMarkers(text) {
+    // Matches: 0:00:15.200 Textblock: Verse
+    const regex = /(\d+:\d+:\d+(?:\.\d+)?)\s+Textblock:\s*(.*)/g;
+    const results = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const timeInSeconds = timeToSeconds(match[1]);
+      const label = (match[2] || '').trim();
+      if (label) results.push({ label, time: timeInSeconds });
+    }
+    return results;
+  }
+
+  function timeToSeconds(timestamp) {
+    const [h, m, sWithMs] = timestamp.split(':');
+    let s = parseFloat(sWithMs);
+    const hNum = parseInt(h||'0',10);
+    const mNum = parseInt(m||'0',10);
+    return hNum * 3600 + mNum * 60 + s;
+  }
+
+  function secondsToTimestamp(sec) {
+    // Returns H:MM:SS.mmm
+    if (!isFinite(sec)) sec = 0;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    const ms = Math.round((sec - Math.floor(sec)) * 1000);
+    const mm = String(m).padStart(2, '0');
+    const ss = String(s).padStart(2, '0');
+    const mmm = String(ms).padStart(3, '0');
+    return `${h}:${mm}:${ss}.${mmm}`;
+  }
+
+  function renderBookmarks(sections) {
+    const panel = document.getElementById('bookmarksPanel');
+    panel.innerHTML = '<h3>Bookmarks</h3>';
+    if (!sections.length) {
+      panel.innerHTML += '<p>No timecoded sections found.</p>';
+      return;
+    }
+    sections.forEach(section => {
+      const btn = document.createElement('button');
+      btn.textContent = `${formatTime(section.time)} – ${section.label}`;
+      btn.onclick = () => seekAbsolute(section.time);
+      panel.appendChild(btn);
+    });
+  }
+
+  function seekAbsolute(sec) {
+    pausedAt = sec;
+    if (playing) startPlayback(sec);
+    else currentTimeEl.textContent = formatTime(sec);
+  }
+
+  function getTotalDuration() {
+    return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+  }
+
+  function renderTracks() {
+    const container = document.getElementById('tracks');
+    container.innerHTML = '';
+    trackData.forEach((t) => {
+      const div = document.createElement('div');
+      div.className = 'track';
+      div.innerHTML = `
+        <strong>${t.name}</strong><br>
+        <button data-action="solo">Solo</button>
+        <button data-action="mute">Mute</button>
+        <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
+      `;
+      div.querySelectorAll('button, input').forEach(el => {
+        el.addEventListener('click', (e) => handleTrackControl(e, t, div));
+        el.addEventListener('input', (e) => handleTrackControl(e, t, div));
+      });
+      container.appendChild(div);
+    });
+    updateButtonStates();
+  }
+
+  function handleTrackControl(e, track) {
+    const act = e.target.dataset.action;
+    if (act === 'gain') track.gain = Number(e.target.value);
+    if (act === 'mute') track.muted = !track.muted;
+    if (act === 'solo') track.solo = !track.solo;
+    updateButtonStates();
+    updateGains();
+  }
+
+  function updateButtonStates() {
+    document.querySelectorAll('.track').forEach((trackDiv, index) => {
+      const track = trackData[index];
+      const soloBtn = trackDiv.querySelector('button[data-action="solo"]');
+      const muteBtn = trackDiv.querySelector('button[data-action="mute"]');
+      soloBtn.classList.toggle('active', track.solo);
+      muteBtn.classList.toggle('active', track.muted);
+    });
+  }
+
+  function startPlayback(offset = 0) {
+    const soloed = trackData.some(t => t.solo);
+    stopPlayback();
+    trackData.forEach(t => {
+      if (!t.buffer) return;
+      const src = ctx.createBufferSource();
+      src.buffer = t.buffer;
+      const g = ctx.createGain();
+      g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain;
+      src.connect(g);
+      g.connect(masterGain);
+      src.start(0, offset);
+      playingNodes.push({ src, g, t });
+    });
+    startAt = ctx.currentTime - offset;
+    playing = true;
+    updateProgress();
+  }
+
+  function stopPlayback() {
+    playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
+    playingNodes = [];
+    playing = false;
+    cancelAnimationFrame(raf);
+  }
+
+  function pausePlayback() {
+    if (!playing) return;
+    pausedAt = ctx.currentTime - startAt;
+    stopPlayback();
+  }
+
+  function updateGains() {
+    const soloed = trackData.some(t => t.solo);
+    playingNodes.forEach(p => {
+      p.g.gain.value = soloed ? (p.t.solo ? p.t.gain : 0) : (p.t.muted ? 0 : p.t.gain);
+    });
+  }
+
+  function updateDuration() {
+    const total = getTotalDuration();
+    totalTimeEl.textContent = formatTime(total);
+  }
+
+  function renderLoopHighlight() {
+    const total = getTotalDuration();
+    if (!total || !loopStart || !loopEnd) return;
+    const startPct = loopStart / total * 100;
+    const endPct = loopEnd / total * 100;
+    loopHighlight.style.left = `${startPct}%";
+    loopHighlight.style.width = `${endPct - startPct}%";
+    loopHighlight.style.display = 'block';
+  }
+
+  function clearLoopHighlight() {
+    loopHighlight.style.display = 'none';
+  }
+
+  function updateProgress() {
+    if (!playing) return;
+    const total = getTotalDuration();
+    const elapsed = ctx.currentTime - startAt;
+    const progressValue = Math.min(elapsed / total, 1);
+    progress.value = progressValue;
+    currentTimeEl.textContent = formatTime(elapsed);
+
+    if (loopActive && loopStart !== null && loopEnd !== null && elapsed >= loopEnd) {
+      startPlayback(loopStart);
+      return;
+    }
+
+    if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
+  }
+
+  function formatTime(sec) {
+    if (!sec || isNaN(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  // === Marker Editor Logic (teacher mode only) ===
+  const markerEditorEl = document.getElementById('markerEditor');
+  const markerListEl = document.getElementById('markerList');
+  const addMarkerBtn = document.getElementById('addMarkerBtn');
+  const downloadMarkersBtn = document.getElementById('downloadMarkersBtn');
+  const uploadMarkersBtn = document.getElementById('uploadMarkersBtn');
+  const uploadMarkersInput = document.getElementById('uploadMarkersInput');
+
+  if (isEdit) {
+    addMarkerBtn.addEventListener('click', () => {
+      const now = playing ? (ctx.currentTime - startAt) : pausedAt;
+      const defaultLabel = 'Section';
+      const label = prompt('Marker label:', defaultLabel);
+      if (label && label.trim()) {
+        markerSections.push({ label: label.trim(), time: Math.max(0, now) });
+        markerSections.sort((a,b)=>a.time-b.time);
+        renderMarkerEditorList();
+        renderBookmarks(markerSections);
+      }
+    });
+
+    downloadMarkersBtn.addEventListener('click', () => {
+      const lines = markerSections.map(m => `${secondsToTimestamp(m.time)} Textblock: ${m.label}`);
+      const blob = new Blob([lines.join('\\n') + '\\n'], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'markers.txt';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        a.remove();
+      }, 0);
+    });
+
+    uploadMarkersBtn.addEventListener('click', () => uploadMarkersInput.click());
+    uploadMarkersInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      markerSections = parseTimecodedMarkers(text).sort((a,b)=>a.time-b.time);
+      renderMarkerEditorList();
+      renderBookmarks(markerSections);
+      uploadMarkersInput.value = '';
+    });
+  }
+
+  function renderMarkerEditorList() {
+    if (!isEdit) return; // never show in student mode
+    markerListEl.innerHTML = '';
+    if (!markerSections.length) {
+      markerListEl.innerHTML = '<div class="helper">No markers yet. Press “Add Marker” while the track is playing.</div>';
+      return;
+    }
+    markerSections.forEach((m, idx) => {
+      const row = document.createElement('div');
+      row.className = 'marker-row';
+
+      const timeBtn = document.createElement('button');
+      timeBtn.textContent = formatTime(m.time);
+      timeBtn.title = 'Seek to marker';
+      timeBtn.addEventListener('click', () => seekAbsolute(m.time));
+      row.appendChild(timeBtn);
+
+      const labelInput = document.createElement('input');
+      labelInput.type = 'text';
+      labelInput.value = m.label;
+      labelInput.addEventListener('change', () => {
+        markerSections[idx].label = labelInput.value.trim();
+        renderBookmarks(markerSections);
+      });
+      row.appendChild(labelInput);
+
+      // Nudge controls
+      const nudgeWrap = document.createElement('div');
+      const backBtn = document.createElement('button');
+      backBtn.textContent = '⟲ -0.25s';
+      backBtn.title = 'Nudge back 250ms';
+      backBtn.addEventListener('click', () => {
+        markerSections[idx].time = Math.max(0, markerSections[idx].time - 0.25);
+        markerSections.sort((a,b)=>a.time-b.time);
+        renderMarkerEditorList();
+        renderBookmarks(markerSections);
+      });
+      const fwdBtn = document.createElement('button');
+      fwdBtn.textContent = '⟳ +0.25s';
+      fwdBtn.title = 'Nudge forward 250ms';
+      fwdBtn.addEventListener('click', () => {
+        markerSections[idx].time = markerSections[idx].time + 0.25;
+        markerSections.sort((a,b)=>a.time-b.time);
+        renderMarkerEditorList();
+        renderBookmarks(markerSections);
+      });
+      nudgeWrap.className = 'marker-actions';
+      nudgeWrap.appendChild(backBtn);
+      nudgeWrap.appendChild(fwdBtn);
+      row.appendChild(nudgeWrap);
+
+      // Delete
+      const delBtn = document.createElement('button');
+      delBtn.textContent = '🗑️ Delete';
+      delBtn.addEventListener('click', () => {
+        if (confirm('Delete this marker?')) {
+          markerSections.splice(idx, 1);
+          renderMarkerEditorList();
+          renderBookmarks(markerSections);
+        }
+      });
+      row.appendChild(delBtn);
+
+      markerListEl.appendChild(row);
+    });
+  }
+
+  document.getElementById('play').onclick = () => {
+    if (ctx.state === 'suspended') ctx.resume();
+    if (!playing) startPlayback(pausedAt);
+  };
+  document.getElementById('pause').onclick = pausePlayback;
+  document.getElementById('stop').onclick = () => {
+    pausedAt = 0;
+    stopPlayback();
+    progress.value = 0;
+    currentTimeEl.textContent = '0:00';
+  };
+  document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
+
+  loadStems();
+</script>
+</body>
+</html>
