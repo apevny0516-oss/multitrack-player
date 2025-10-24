@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multitrack Player</title>
+<style>
+body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; position: relative; }
+.track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 1rem; }
+button.active { background-color: #007bff; color: white; border-color: #007bff; }
+.progress-container { margin-top: 1rem; position: relative; }
+.time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
+.loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
+
+#bookmarksPanel h3 { margin-bottom: 0.75rem; }
+#bookmarksPanel button {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.volume-line { flex-basis: 100%; display: flex; flex-direction: row; align-items: center; gap: 0.5rem; }
+
+@media (max-width: 600px) {
+  .volume-line { flex-direction: column; align-items: flex-start; }
+}
+
+/* Loading overlay */
+#loadingOverlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(255,255,255,0.9);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem; font-weight: bold; color: #333;
+  z-index: 999; flex-direction: column;
+}
+
+/* How To Use modal */
+#howToUseBtn {
+  position: absolute; top: 1rem; right: 1rem;
+  background: #007bff; color: white; border: none;
+  border-radius: 5px; padding: 0.4rem 0.8rem; font-weight: bold;
+}
+#modalOverlay {
+  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.6); z-index: 1000;
+  align-items: center; justify-content: center;
+}
+#modalBox {
+  background: white; max-width: 500px; width: 90%;
+  border-radius: 8px; padding: 1rem 1.5rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  max-height: 80vh; overflow-y: auto;
+  position: relative;
+}
+#modalBox h3 { margin-top: 0; }
+#closeModal {
+  position: absolute; top: 10px; right: 15px;
+  background: none; border: none; font-size: 1.5rem; cursor: pointer;
+  color: #555;
+}
+</style>
+</head>
+<body>
+<h2 id="pageTitle">Multitrack Player</h2>
+
+<button id="howToUseBtn">How to Use</button>
+
+<!-- Modal for How To Use -->
+<div id="modalOverlay">
+  <div id="modalBox">
+    <button id="closeModal">&times;</button>
+    <h3>How to Use</h3>
+    <p>Here’s how to use the multitrack player:</p>
+    <ul>
+      <li>Use the Play, Pause, and Stop buttons to control playback.</li>
+      <li>Adjust each track’s volume or use the Solo and Mute buttons.</li>
+      <li>Use “Loop Start” and “Loop End” to repeat a section.</li>
+      <li>Click on Bookmarks to jump to different sections of the song.</li>
+    </ul>
+    <p>You can replace this text with your own detailed instructions.</p>
+  </div>
+</div>
+
+<div id="loadingOverlay">
+  <div id="loadingText">Now Loading...</div>
+</div>
+
+<script>
+// Handle How To Use modal
+const modalOverlay = document.getElementById('modalOverlay');
+const howToUseBtn = document.getElementById('howToUseBtn');
+const closeModal = document.getElementById('closeModal');
+
+howToUseBtn.onclick = () => { modalOverlay.style.display = 'flex'; };
+closeModal.onclick = () => { modalOverlay.style.display = 'none'; };
+window.onclick = (e) => { if (e.target === modalOverlay) modalOverlay.style.display = 'none'; };
+
+console.log("Multitrack player loaded - modal added successfully.");
+</script>
+</body>
+</html>
