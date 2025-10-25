@@ -118,7 +118,7 @@ masterGain.connect(ctx.destination);
 
 const trackData = [];
 let playingNodes = [];
-let startAt = 0, pausedAt = sec; playing = false;
+let startAt = 0, pausedAt = 0, playing = false;
 let raf;
 
 let loopActive = false;
@@ -261,7 +261,8 @@ function renderBookmarks(sections) {
 }
 
 function seekAbsolute(sec) {
-  pausedAt = sec;
+ pausedAt = Math.max(0, sec - (leadInEnabled ? 5 : 0));
+
   if (playing) startPlayback(sec);
   else currentTimeEl.textContent = formatTime(sec);
 }
