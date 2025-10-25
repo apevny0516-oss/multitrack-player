@@ -393,23 +393,7 @@ document.getElementById('stop').onclick = () => {
   currentTimeEl.textContent = '0:00';
 };
 document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
-let isSeeking = false;
 
-progress.addEventListener('mousedown', () => { isSeeking = true; });
-progress.addEventListener('mouseup', (e) => {
-  isSeeking = false;
-  const total = getTotalDuration();
-  const newTime = e.target.value * total;
-  pausedAt = newTime;
-  if (playing) startPlayback(newTime);
-  else currentTimeEl.textContent = formatTime(newTime);
-});
-progress.addEventListener('input', (e) => {
-  if (!isSeeking) return;
-  const total = getTotalDuration();
-  const newTime = e.target.value * total;
-  currentTimeEl.textContent = formatTime(newTime);
-});
 
 loadStems();
 </script>
