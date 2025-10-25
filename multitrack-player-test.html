@@ -1,244 +1,403 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Multitrack Player (Canvas Embed)</title>
-  <style>
-    /* --- Scoped styles so we don't fight Canvas LMS CSS --- */
-    :root { --mtp-accent:#0b5cff; --mtp-bg:#111827; --mtp-card:#1f2937; --mtp-text:#e5e7eb; --mtp-sub:#9ca3af; }
-    @media (prefers-color-scheme: light) {
-      :root { --mtp-bg:#f7f7fb; --mtp-card:#ffffff; --mtp-text:#111827; --mtp-sub:#6b7280; }
-    }
-    #mtp-root { box-sizing:border-box; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--mtp-text); background:transparent; }
-    #mtp-wrap { background:var(--mtp-card); border:1px solid rgba(0,0,0,.08); border-radius:12px; padding:12px; box-shadow:0 4px 20px rgba(0,0,0,.12); max-width:100%; }
-    #mtp-title { margin:0 0 8px; font-size:18px; font-weight:700; }
-    .mtp-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-    .mtp-controls button { cursor:pointer; border:1px solid rgba(0,0,0,.2); background:#1118270d; color:inherit; border-radius:8px; padding:6px 10px; }
-    .mtp-controls button.active { background: var(--mtp-accent); color:#fff; border-color:var(--mtp-accent); }
-    .mtp-slider { appearance:none; width:100%; height:6px; border-radius:999px; background:#00000020; outline:none; }
-    .mtp-slider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%; background:var(--mtp-accent); cursor:pointer; border:none; }
-    .mtp-time { display:flex; justify-content:space-between; color:var(--mtp-sub); font-size:12px; margin-top:4px; }
-    .mtp-track { background: #00000008; border:1px solid #00000014; padding:10px; border-radius:10px; margin-top:8px; }
-    .mtp-track strong { display:block; margin-bottom:6px; font-weight:700; }
-    .mtp-progress { margin-top:8px; position:relative; }
-    .mtp-loop { position:absolute; top:50%; height:6px; background: color-mix(in srgb, var(--mtp-accent) 35%, transparent); border-radius:3px; transform: translateY(-50%); pointer-events:none; display:none; }
-    .mtp-bookmarks h3 { margin:14px 0 8px; font-size:14px; }
-    .mtp-bookmarks button { width:100%; text-align:left; font-weight:700; padding:8px 10px; border-radius:10px; border:1px solid #00000014; background:#00000006; margin-bottom:6px; cursor:pointer; }
-
-    /* Compact mode for tight embeds */
-    .mtp-compact #mtp-title { font-size:16px; }
-    .mtp-compact .mtp-track { padding:8px; }
-    .mtp-compact .mtp-bookmarks button { font-size:13px; padding:6px 8px; }
-
-    /* Loading overlay */
-    #mtp-loading {
-      position: fixed; inset: 0; background: rgba(255,255,255,.85);
-      display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:9999;
-      color:#111827;
-    }
-    @media (prefers-color-scheme: dark) { #mtp-loading { background: rgba(0,0,0,.6); color:#e5e7eb; } }
-    #mtp-loading p { margin:6px 0 0; font-weight:600; }
-
-    /* Make the whole thing responsive in narrow iframes */
-    @media (max-width: 520px) {
-      .mtp-row { gap:6px; }
-      .mtp-controls button { padding:6px 8px; }
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multitrack Player (Canvas-Compatible)</title>
+<style>
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; padding: 16px; }
+h2 { margin-top: 0; }
+.wrapper { max-width: 920px; margin: 0 auto; }
+.track { background: #fff; padding: 12px; margin-bottom: 8px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+button { cursor: pointer; border: 1px solid #d0d7de; border-radius: 8px; padding: 6px 10px; font-size: 14px; background: #fff; }
+button.active { background-color: #0d6efd; color: #fff; border-color: #0d6efd; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.controls .spacer { flex: 1; }
+.volume-line { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+@media (max-width: 640px) {
+  .volume-line { flex-direction: column; align-items: flex-start; }
+}
+.progress-container { margin-top: 12px; position: relative; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.time { font-size: 12px; display: flex; justify-content: space-between; color: #555; margin-top: 6px; }
+.loop-highlight { position: absolute; top: 38px; height: 6px; background: rgba(13,110,253,.25); border-radius: 3px; transform: translateY(-50%); pointer-events: none; left: 0; width: 0; }
+#bookmarksPanel h3 { margin: 12px 0; }
+#bookmarksPanel button {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+#loadingOverlay {
+  position: fixed; inset: 0;
+  background: rgba(255,255,255,.92);
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  font-size: 18px; font-weight: 700; color: #333; z-index: 9999;
+}
+.small { font-weight: 500; font-size: 12px; opacity: .75; }
+</style>
 </head>
-<body style="margin:0; background:var(--mtp-bg)">
-<div id="mtp-root">
-  <div id="mtp-wrap" class="mtp-controls">
-    <h2 id="mtp-title">Multitrack Player</h2>
+<body>
+<div class="wrapper">
+  <h2 id="pageTitle">Multitrack Player</h2>
 
-    <div class="mtp-row" style="margin-bottom:6px">
-      <button id="mtp-play" title="Play">▶️</button>
-      <button id="mtp-pause" title="Pause">⏸️</button>
-      <button id="mtp-stop" title="Stop">⏹️</button>
-      <button id="mtp-loop">Loop Start</button>
-      <div style="flex:1; min-width:160px; display:flex; align-items:center; gap:8px; margin-left:auto">
-        <label for="mtp-master" style="font-size:12px; color:var(--mtp-sub)">Master</label>
-        <input id="mtp-master" class="mtp-slider" type="range" min="0" max="1" step="0.01" value="1" />
-      </div>
-    </div>
-
-    <div id="mtp-progress" class="mtp-progress">
-      <input id="mtp-progressbar" class="mtp-slider" type="range" min="0" max="1" step="0.001" value="0" />
-      <div id="mtp-loopviz" class="mtp-loop"></div>
-      <div class="mtp-time"><span id="mtp-current">0:00</span><span id="mtp-total">0:00</span></div>
-    </div>
-
-    <div id="mtp-tracks"></div>
-    <div id="mtp-bookmarks" class="mtp-bookmarks"></div>
+  <div id="loadingOverlay">
+    <div id="loadingText">Now Loading...</div>
+    <div class="small">If this takes long, Canvas may be gating access for non-enrolled users.</div>
   </div>
-</div>
 
-<div id="mtp-loading" role="status" aria-live="polite">
-  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-  </svg>
-  <p id="mtp-loading-text">Now Loading…</p>
+  <div class="controls">
+    <button id="play" title="Play">▶️</button>
+    <button id="pause" title="Pause">⏸️</button>
+    <button id="stop" title="Stop">⏹️</button>
+    <button id="loop">Loop Start</button>
+    <div class="spacer"></div>
+    <div class="volume-line">
+      <label for="masterVol">Master Volume</label>
+      <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
+    </div>
+  </div>
+
+  <div id="progressContainer" class="progress-container">
+    <div class="loop-highlight" id="loopHighlight"></div>
+  </div>
+
+  <div id="tracks"></div>
+  <div id="bookmarksPanel" style="margin-top:12px;"></div>
 </div>
 
 <script>
-(function(){
-  // ===== URL Params =====
-  const params = new URLSearchParams(location.search);
-  const stems = [];
-  let markersFile = null;
-  const titleParam = params.get('title');
-  const compact = params.get('compact') === '1';
+// ----- URL PARAMS -----
+const params = new URLSearchParams(window.location.search);
+const stems = [];
+let markersFile = null;
 
-  // Build stems + grab markers
-  for (const [key, value] of params.entries()) {
-    const k = key.toLowerCase();
-    if (k === 'title' || k === 'compact' || k === 'autoplay') continue;
-    if (['markers','lyrics','text'].includes(k)) markersFile = value; else stems.push({ name:key, url:value });
+const titleParam = params.get('title');
+if (titleParam) {
+  const title = decodeURIComponent(titleParam);
+  document.title = title;
+  document.getElementById('pageTitle').textContent = title;
+}
+
+for (const [key, value] of params.entries()) {
+  const k = key.toLowerCase();
+  if (k === 'title') continue;
+  if (['markers','lyrics','text'].includes(k)) {
+    markersFile = value;
+  } else {
+    stems.push({ name: key, url: value });
   }
+}
 
-  // ===== Elements =====
-  const root = document.getElementById('mtp-root');
-  if (compact) root.classList.add('mtp-compact');
-  const titleEl = document.getElementById('mtp-title');
-  if (titleParam) { document.title = decodeURIComponent(titleParam); titleEl.textContent = decodeURIComponent(titleParam); }
-  const loading = document.getElementById('mtp-loading');
-  const loadingText = document.getElementById('mtp-loading-text');
-  const tracksEl = document.getElementById('mtp-tracks');
-  const bookmarksEl = document.getElementById('mtp-bookmarks');
-  const progressEl = document.getElementById('mtp-progressbar');
-  const loopViz = document.getElementById('mtp-loopviz');
-  const curTimeEl = document.getElementById('mtp-current');
-  const totalTimeEl = document.getElementById('mtp-total');
+// ----- AUDIO CONTEXT / MASTER -----
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = ctx.createGain();
+masterGain.gain.value = 1;
+masterGain.connect(ctx.destination);
 
-  // ===== Audio graph =====
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const masterGain = ctx.createGain();
-  masterGain.connect(ctx.destination);
+// iOS silent switch unlock
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(0);
+    if (ctx.state === 'suspended') ctx.resume();
+    audioUnlocked = true;
+  } catch (e) {}
+}
+document.body.addEventListener('touchstart', unlockAudio, { once: true });
+document.body.addEventListener('click', unlockAudio, { once: true });
 
-  const trackData = [];
-  let playingNodes = [];
-  let startAt = 0, pausedAt = 0, playing = false; let raf;
-  let loopActive = false, loopStart = null, loopEnd = null;
+// ----- STATE -----
+const trackData = [];   // { name, url, audioEl, srcNode, gainNode, gain, muted, solo }
+let isPlaying = false;
+let leader = null;      // reference audio element for time/progress
+let raf;
+let loopActive = false;
+let loopStart = null;
+let loopEnd = null;
 
-  // iOS/Safari unlock (silent switch)
-  let unlocked = false;
-  function unlock() {
-    if (unlocked) return; unlocked = true;
-    try {
-      const b = ctx.createBuffer(1,1,22050); const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0);
-      if (ctx.state === 'suspended') ctx.resume();
-    } catch(e){}
+const loadingOverlay = document.getElementById('loadingOverlay');
+const loadingText = document.getElementById('loadingText');
+const tracksContainer = document.getElementById('tracks');
+const progressContainer = document.getElementById('progressContainer');
+const loopHighlight = document.getElementById('loopHighlight');
+
+// Progress UI
+const slider = document.createElement('input');
+slider.type = 'range'; slider.min = 0; slider.max = 1; slider.step = 0.001; slider.value = 0;
+slider.style.width = '100%'; slider.style.display = 'block';
+const timeRow = document.createElement('div');
+timeRow.className = 'time';
+const currentTimeEl = document.createElement('span'); currentTimeEl.textContent = '0:00';
+const totalTimeEl = document.createElement('span'); totalTimeEl.textContent = '0:00';
+timeRow.appendChild(currentTimeEl); timeRow.appendChild(totalTimeEl);
+progressContainer.appendChild(slider);
+progressContainer.appendChild(timeRow);
+
+// ----- HELPERS -----
+function formatTime(sec) {
+  if (!sec || isNaN(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2,'0')}`;
+}
+function getTotalDuration() {
+  return trackData.reduce((m, t) => Math.max(m, (t.audioEl && isFinite(t.audioEl.duration)) ? t.audioEl.duration : 0), 0);
+}
+function updateDuration() {
+  totalTimeEl.textContent = formatTime(getTotalDuration());
+}
+function renderLoopUI() {
+  const total = getTotalDuration();
+  if (!total || loopStart === null || loopEnd === null) { loopHighlight.style.width = 0; return; }
+  const startPct = (loopStart / total) * 100;
+  const endPct = (loopEnd / total) * 100;
+  loopHighlight.style.left = startPct + '%';
+  loopHighlight.style.width = (endPct - startPct) + '%';
+}
+
+// ----- LOAD STEMS USING <audio> (Canvas-friendly) -----
+async function loadStems() {
+  let loaded = 0, total = stems.length;
+  if (total === 0) {
+    loadingText.textContent = 'No stems in URL. Add like ?Guitar=<url>&Bass=<url>';
   }
-  document.addEventListener('touchstart', unlock, {once:true});
-  document.addEventListener('click', unlock, {once:true});
+  for (const s of stems) {
+    const audioEl = new Audio();
+    audioEl.src = s.url;
+    audioEl.preload = 'auto';
+    audioEl.crossOrigin = 'anonymous'; // safe even if ignored by Canvas
 
-  // ===== Controls =====
-  const $ = id => document.getElementById(id);
-  $('mtp-play').onclick = () => { if (ctx.state === 'suspended') ctx.resume(); if (!playing) startPlayback(pausedAt); };
-  $('mtp-pause').onclick = pausePlayback;
-  $('mtp-stop').onclick = () => { pausedAt = 0; stopPlayback(); progressEl.value = 0; curTimeEl.textContent = '0:00'; };
-  $('mtp-master').oninput = e => { masterGain.gain.value = e.target.value; };
-
-  // Keyboard space toggles play/pause to help inside iframes
-  window.addEventListener('keydown', (e)=>{
-    if (e.code === 'Space') { e.preventDefault(); playing ? $('mtp-pause').click() : $('mtp-play').click(); }
-  });
-
-  // Loop button
-  const loopBtn = $('mtp-loop');
-  loopBtn.addEventListener('click', ()=>{
-    const current = Math.max(0, ctx.currentTime - startAt);
-    if (!loopStart && !loopEnd) { loopStart = current; loopBtn.textContent = 'Loop End'; }
-    else if (loopStart && !loopEnd) { loopEnd = current; loopActive = true; loopBtn.textContent = 'Clear Loop'; loopBtn.classList.add('active'); renderLoopViz(); }
-    else { loopActive = false; loopStart = loopEnd = null; loopBtn.textContent='Loop Start'; loopBtn.classList.remove('active'); loopViz.style.display='none'; }
-  });
-
-  // ===== Loaders =====
-  async function loadStems(){
-    let loaded=0, total=stems.length; if (!total) { loadingText.textContent='No stems found in URL.'; }
-    await Promise.all(stems.map(async (s)=>{
-      try {
-        const res = await fetch(s.url, {mode:'cors'});
-        const arr = await res.arrayBuffer();
-        const buf = await ctx.decodeAudioData(arr);
-        trackData.push({...s, buffer:buf, gain:1, muted:false, solo:false});
-        loaded++; loadingText.textContent = `Loading ${loaded} of ${total}…`;
-      } catch(err){ console.error('Stem load error', s.url, err); loaded++; loadingText.textContent = `Loading ${loaded} of ${total} (error)`; }
-    }));
-    renderTracks(); updateDuration(); if (markersFile) await loadMarkers(markersFile); loading.style.display='none';
-    if (params.get('autoplay')==='1') { // requires user click in most browsers; we best-effort
-      // noop: user must click at least once due to policies; if unlocked already this will work after first click
-    }
-  }
-
-  async function loadMarkers(url){
-    try { const res = await fetch(url); const text = await res.text(); renderBookmarks(parseMarkers(text)); } catch(e){ console.error('Markers error', e); }
-  }
-
-  function parseMarkers(text){
-    const rx = /(\d+:\d+:\d+\.\d+)\s+Textblock:\s*(.*)/g; const out=[]; let m;
-    while ((m = rx.exec(text)) !== null){ const t = toSec(m[1]); const label=(m[2]||'').trim(); if (label) out.push({label,time:t}); }
-    return out;
-  }
-  function toSec(ts){ const [h,m,s] = ts.split(':').map(parseFloat); return h*3600 + m*60 + s; }
-
-  function renderBookmarks(sections){
-    bookmarksEl.innerHTML = '<h3>Bookmarks</h3>';
-    if (!sections.length){ bookmarksEl.insertAdjacentHTML('beforeend','<p style="color:var(--mtp-sub)">No timecoded sections.</p>'); return; }
-    for (const sec of sections){ const b = document.createElement('button'); b.textContent = `${fmt(sec.time)} – ${sec.label}`; b.addEventListener('click', ()=>seekAbsolute(sec.time)); bookmarksEl.appendChild(b); }
-  }
-
-  function seekAbsolute(sec){ pausedAt = sec; if (playing) startPlayback(sec); else curTimeEl.textContent = fmt(sec); }
-  function duration(){ return trackData.reduce((m,t)=>Math.max(m, t.buffer? t.buffer.duration:0), 0); }
-
-  function renderTracks(){
-    tracksEl.innerHTML='';
-    trackData.forEach((t,i)=>{
-      const card = document.createElement('div'); card.className='mtp-track';
-      card.innerHTML = `<strong>${t.name}</strong>
-        <div class="mtp-row">
-          <button data-action="solo">Solo</button>
-          <button data-action="mute">Mute</button>
-          <label style="display:flex;align-items:center;gap:8px">Vol <input data-action="gain" class="mtp-slider" type="range" min="0" max="2" step="0.01" value="1"></label>
-        </div>`;
-      card.querySelectorAll('button,input').forEach(el=>{
-        el.addEventListener('click', ev=>ctrl(ev, t, card));
-        el.addEventListener('input', ev=>ctrl(ev, t, card));
-      });
-      tracksEl.appendChild(card);
+    // wait until it can play
+    await new Promise((resolve) => {
+      const onReady = () => { cleanup(); resolve(); };
+      const onError = () => { console.warn('Error loading', s.url); cleanup(); resolve(); };
+      const cleanup = () => {
+        audioEl.removeEventListener('canplaythrough', onReady);
+        audioEl.removeEventListener('loadedmetadata', onReady);
+        audioEl.removeEventListener('error', onError);
+      };
+      audioEl.addEventListener('canplaythrough', onReady, { once: true });
+      audioEl.addEventListener('loadedmetadata', onReady, { once: true });
+      audioEl.addEventListener('error', onError, { once: true });
     });
-    reflectButtons();
+
+    const srcNode = ctx.createMediaElementSource(audioEl);
+    const gainNode = ctx.createGain();
+    srcNode.connect(gainNode);
+    gainNode.connect(masterGain);
+
+    trackData.push({ name: s.name, url: s.url, audioEl, srcNode, gainNode, gain: 1, muted: false, solo: false });
+    loaded++;
+    loadingText.textContent = `Loading ${loaded} of ${total}...`;
   }
-  function ctrl(e, track, card){ const act=e.target.dataset.action; if (act==='gain') track.gain=+e.target.value; if (act==='mute') track.muted=!track.muted; if (act==='solo') track.solo=!track.solo; reflectButtons(); applyGains(); }
-  function reflectButtons(){ [...document.querySelectorAll('.mtp-track')].forEach((div,idx)=>{ const t=trackData[idx]; const s=div.querySelector('button[data-action="solo"]'); const m=div.querySelector('button[data-action="mute"]'); s.classList.toggle('active', !!t.solo); m.classList.toggle('active', !!t.muted); }); }
 
-  function startPlayback(offset=0){ const soloed = trackData.some(t=>t.solo); stopPlayback();
-    trackData.forEach(t=>{ if (!t.buffer) return; const src=ctx.createBufferSource(); src.buffer=t.buffer; const g=ctx.createGain(); g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain; src.connect(g); g.connect(masterGain); src.start(0, offset); playingNodes.push({src,g,t}); });
-    startAt = ctx.currentTime - offset; playing = true; tick(); }
-  function stopPlayback(){ playingNodes.forEach(p=>{ try{p.src.stop();}catch{} }); playingNodes=[]; playing=false; cancelAnimationFrame(raf); }
-  function pausePlayback(){ if (!playing) return; pausedAt = Math.max(0, ctx.currentTime - startAt); stopPlayback(); }
-  function applyGains(){ const soloed = trackData.some(t=>t.solo); playingNodes.forEach(p=>{ p.g.gain.value = soloed ? (p.t.solo? p.t.gain:0) : (p.t.muted?0:p.t.gain); }); }
-  function updateDuration(){ totalTimeEl.textContent = fmt(duration()); }
-  function renderLoopViz(){ const total = duration(); if (!total || loopStart==null || loopEnd==null) return; const a = loopStart/total*100; const b = loopEnd/total*100; loopViz.style.left=a+'%'; loopViz.style.width=(b-a)+'%'; loopViz.style.display='block'; }
+  // pick leader
+  leader = trackData.length ? trackData[0].audioEl : null;
 
-  function tick(){ if (!playing) return; const total = duration(); const elapsed = Math.max(0, ctx.currentTime - startAt); const val = Math.min(elapsed/total,1); progressEl.value = val; curTimeEl.textContent = fmt(elapsed);
-    if (loopActive && loopStart!=null && loopEnd!=null && elapsed >= loopEnd){ startPlayback(loopStart); return; }
-    if (val < 1) raf = requestAnimationFrame(tick);
+  renderTracks();
+  updateDuration();
+
+  if (markersFile) await loadMarkersFile(markersFile);
+
+  loadingOverlay.style.display = 'none';
+}
+
+// ----- RENDER TRACK CONTROLS -----
+function renderTracks() {
+  tracksContainer.innerHTML = '';
+  trackData.forEach((t, idx) => {
+    const div = document.createElement('div');
+    div.className = 'track';
+    div.innerHTML = `
+      <strong>${t.name}</strong><br>
+      <button data-action="solo" data-idx="${idx}">Solo</button>
+      <button data-action="mute" data-idx="${idx}">Mute</button>
+      <label>Vol <input data-action="gain" data-idx="${idx}" type="range" min="0" max="2" step="0.01" value="${t.gain}"></label>
+    `;
+    tracksContainer.appendChild(div);
+  });
+
+  tracksContainer.addEventListener('click', onTrackClick);
+  tracksContainer.addEventListener('input', onTrackInput);
+  refreshButtons();
+  applyGains();
+}
+function onTrackClick(e) {
+  const act = e.target.getAttribute('data-action');
+  if (!act) return;
+  const idx = Number(e.target.getAttribute('data-idx'));
+  const t = trackData[idx];
+  if (!t) return;
+  if (act === 'solo') t.solo = !t.solo;
+  if (act === 'mute') t.muted = !t.muted;
+  refreshButtons();
+  applyGains();
+}
+function onTrackInput(e) {
+  const act = e.target.getAttribute('data-action');
+  if (act !== 'gain') return;
+  const idx = Number(e.target.getAttribute('data-idx'));
+  const t = trackData[idx];
+  t.gain = Number(e.target.value);
+  applyGains();
+}
+function refreshButtons() {
+  document.querySelectorAll('button[data-action="solo"]').forEach(btn => {
+    const t = trackData[Number(btn.getAttribute('data-idx'))];
+    btn.classList.toggle('active', t.solo);
+  });
+  document.querySelectorAll('button[data-action="mute"]').forEach(btn => {
+    const t = trackData[Number(btn.getAttribute('data-idx'))];
+    btn.classList.toggle('active', t.muted);
+  });
+}
+function applyGains() {
+  const anySolo = trackData.some(t => t.solo);
+  trackData.forEach(t => {
+    const active = anySolo ? t.solo : !t.muted;
+    t.gainNode.gain.value = active ? t.gain : 0;
+  });
+}
+
+// ----- TRANSPORT -----
+function playAll(fromTime = null) {
+  if (ctx.state === 'suspended') ctx.resume();
+  trackData.forEach(t => {
+    if (fromTime !== null) {
+      try { t.audioEl.currentTime = Math.min(fromTime, (isFinite(t.audioEl.duration) ? t.audioEl.duration - 0.05 : fromTime)); } catch(e){}
+    }
+    const p = t.audioEl.play();
+    if (p && typeof p.catch === 'function') p.catch(()=>{});
+  });
+  isPlaying = true;
+  requestTick();
+}
+function pauseAll() {
+  trackData.forEach(t => t.audioEl.pause());
+  isPlaying = false;
+  cancelAnimationFrame(raf);
+}
+function stopAll() {
+  pauseAll();
+  seekAll(0);
+  slider.value = 0;
+  currentTimeEl.textContent = '0:00';
+}
+function seekAll(timeSec) {
+  trackData.forEach(t => {
+    try { t.audioEl.currentTime = Math.min(timeSec, isFinite(t.audioEl.duration) ? t.audioEl.duration - 0.05 : timeSec); } catch(e){}
+  });
+  currentTimeEl.textContent = formatTime(timeSec);
+}
+
+// ----- LOOP -----
+const loopBtn = document.getElementById('loop');
+loopBtn.addEventListener('click', () => {
+  const now = leader ? leader.currentTime : 0;
+  if (loopStart === null && loopEnd === null) {
+    loopStart = now; loopBtn.textContent = 'Loop End';
+  } else if (loopStart !== null && loopEnd === null) {
+    loopEnd = now; loopActive = true; loopBtn.textContent = 'Clear Loop'; loopBtn.classList.add('active'); renderLoopUI();
+  } else {
+    loopActive = false; loopStart = null; loopEnd = null; loopBtn.textContent = 'Loop Start'; loopBtn.classList.remove('active'); renderLoopUI();
   }
-  function fmt(sec){ if (!sec || isNaN(sec)) return '0:00'; const m=Math.floor(sec/60), s=Math.floor(sec%60); return `${m}:${String(s).padStart(2,'0')}`; }
+});
 
-  // Init
-  loadStems();
-})();
+function requestTick() {
+  function tick() {
+    if (!isPlaying || !leader) return;
+    const total = getTotalDuration();
+    const t = leader.currentTime || 0;
+    slider.value = total ? Math.min(t / total, 1) : 0;
+    currentTimeEl.textContent = formatTime(t);
+
+    if (loopActive && loopStart !== null && loopEnd !== null && t >= loopEnd) {
+      playAll(loopStart);
+      return; // reset tick on next frame
+    }
+    raf = requestAnimationFrame(tick);
+  }
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(tick);
+}
+
+// ----- PROGRESS / SEEK UI -----
+slider.addEventListener('input', () => {
+  const total = getTotalDuration();
+  const target = total * Number(slider.value);
+  seekAll(target);
+  if (isPlaying) playAll(target);
+});
+
+// ----- MASTER VOLUME -----
+document.getElementById('masterVol').addEventListener('input', (e) => {
+  masterGain.gain.value = Number(e.target.value);
+});
+
+// ----- BOOKMARKS -----
+async function loadMarkersFile(url) {
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+    const sections = parseTimecodedMarkers(text);
+    renderBookmarks(sections);
+  } catch (e) {
+    console.error('Error loading markers file', e);
+  }
+}
+function parseTimecodedMarkers(text) {
+  // expects "HH:MM:SS.sss  Textblock: Label"
+  const regex = /(\\d+:\\d+:\\d+\\.\\d+)\\s+Textblock:\\s*(.*)/g;
+  const results = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const timeInSeconds = timeToSeconds(match[1]);
+    const label = match[2].trim();
+    if (label) results.push({ label, time: timeInSeconds });
+  }
+  return results;
+}
+function timeToSeconds(ts) {
+  const [h, m, s] = ts.split(':').map(parseFloat);
+  return h * 3600 + m * 60 + s;
+}
+function renderBookmarks(sections) {
+  const panel = document.getElementById('bookmarksPanel');
+  panel.innerHTML = '<h3>Bookmarks</h3>';
+  if (!sections.length) {
+    panel.innerHTML += '<p>No timecoded sections found.</p>';
+    return;
+  }
+  sections.forEach(section => {
+    const btn = document.createElement('button');
+    btn.textContent = `${formatTime(section.time)} – ${section.label}`;
+    btn.addEventListener('click', () => {
+      seekAll(section.time);
+      if (isPlaying) playAll(section.time); else currentTimeEl.textContent = formatTime(section.time);
+    });
+    panel.appendChild(btn);
+  });
+}
+
+// ----- TRANSPORT BUTTONS -----
+document.getElementById('play').addEventListener('click', () => {
+  // resume from leader's current time
+  const t = leader ? leader.currentTime : 0;
+  playAll(t);
+});
+document.getElementById('pause').addEventListener('click', pauseAll);
+document.getElementById('stop').addEventListener('click', stopAll);
+
+// ----- INIT -----
+loadStems();
 </script>
-
-<!--
-USAGE (Embed in Canvas):
-1) Upload this HTML somewhere accessible (Netlify, GitHub Pages, your site), then embed with:
-   <iframe src="https://yourhost.com/multitrack-player-canvas-embed.html?title=She&Drums=https%3A%2F%2F...drums.mp3&Bass=https%3A%2F%2F...bass.mp3&Guitar=https%3A%2F%2F...guitar.mp3&markers=https%3A%2F%2F...markers.txt&compact=1" width="100%" height="560" allow="autoplay"></iframe>
-2) Query keys become track names; values are direct file URLs. Optional: title, markers, compact=1.
-3) Browser autoplay policies require a user click before sound in many LMS iframes.
--->
 </body>
 </html>
