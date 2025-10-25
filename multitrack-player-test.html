@@ -264,17 +264,21 @@ function seekAbsolute(sec) {
   const targetTime = Math.max(0, sec - (leadInEnabled ? 5 : 0));
   pausedAt = targetTime;
 
-  // reflect position immediately
+  stopPlayback(); // stop any current playback first
+
   const total = getTotalDuration();
   if (total) {
     progress.value = targetTime / total;
     currentTimeEl.textContent = formatTime(targetTime);
   }
 
-  // when playing, actually jump to targetTime
-  if (playing) startPlayback(targetTime);
-  else currentTimeEl.textContent = formatTime(targetTime);
+  if (playing) {
+    startPlayback(targetTime);
+  } else {
+    currentTimeEl.textContent = formatTime(targetTime);
+  }
 }
+
 
 function getTotalDuration() {
   return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
