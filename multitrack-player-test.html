@@ -264,15 +264,15 @@ function seekAbsolute(sec) {
   const targetTime = Math.max(0, sec - (leadInEnabled ? 5 : 0));
   pausedAt = targetTime;
 
-  stopPlayback(); // stop any current playback first
-
   const total = getTotalDuration();
   if (total) {
     progress.value = targetTime / total;
     currentTimeEl.textContent = formatTime(targetTime);
   }
 
+  // if currently playing, restart immediately
   if (playing) {
+    stopPlayback();
     startPlayback(targetTime);
   } else {
     currentTimeEl.textContent = formatTime(targetTime);
