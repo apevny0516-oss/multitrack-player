@@ -261,10 +261,11 @@ function renderBookmarks(sections) {
 }
 
 function seekAbsolute(sec) {
- pausedAt = Math.max(0, sec - (leadInEnabled ? 5 : 0));
+  const targetTime = Math.max(0, sec - (leadInEnabled ? 5 : 0));
+  pausedAt = targetTime;
 
-  if (playing) startPlayback(sec);
-  else currentTimeEl.textContent = formatTime(sec);
+  if (playing) startPlayback(targetTime);
+  else currentTimeEl.textContent = formatTime(targetTime);
 }
 
 function getTotalDuration() {
