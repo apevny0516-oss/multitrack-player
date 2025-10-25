@@ -60,21 +60,19 @@ flex-direction: column;
 <body>
 <h2 id="pageTitle">Multitrack Player</h2>
 
-<div id="loadingOverlay">
-  <div id="loadingText">Now Loading...</div>
-</div>
+<div id="loadingOverlay"><div id="loadingText">Now Loading...</div></div>
 
 <div class="controls">
-<button id="play" title="Play">▶️</button>
-<button id="pause" title="Pause">⏸️</button>
-<button id="stop" title="Stop">⏹️</button>
-<button id="loop">Loop Start</button>
-<button id="leadIn">Lead-In: Off</button>
-  
-<div class="volume-line">
-<label for="masterVol">Master Volume</label>
-<input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
-</div>
+  <button id="play" title="Play">▶️</button>
+  <button id="pause" title="Pause">⏸️</button>
+  <button id="stop" title="Stop">⏹️</button>
+  <button id="loop">Loop Start</button>
+  <button id="leadIn">Lead-In: Off</button>
+
+  <div class="volume-line">
+    <label for="masterVol">Master Volume</label>
+    <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
+  </div>
 </div>
 
 <div id="progressContainer" class="progress-container"></div>
@@ -82,14 +80,13 @@ flex-direction: column;
 <div id="bookmarksPanel" style="margin-top:1rem;"></div>
 
 <script>
-
 let leadInEnabled = false;
 document.getElementById('leadIn').addEventListener('click', (e) => {
   leadInEnabled = !leadInEnabled;
   e.target.textContent = `Lead-In: ${leadInEnabled ? 'On' : 'Off'}`;
   e.target.classList.toggle('active', leadInEnabled);
 });
-  
+
 const params = new URLSearchParams(window.location.search);
 const stems = [];
 let markersFile = null;
@@ -101,7 +98,6 @@ if (titleParam) {
   document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
 }
 
-// ✅ Fixed: only skip title, not markers
 for (const [key, value] of params.entries()) {
   const k = key.toLowerCase();
   if (k === 'title') continue;
@@ -125,7 +121,7 @@ let loopActive = false;
 let loopStart = null;
 let loopEnd = null;
 
-// Unlock iOS audio (silent mode workaround)
+// Unlock iOS audio
 let audioUnlocked = false;
 function unlockAudio() {
   if (audioUnlocked) return;
@@ -140,6 +136,7 @@ function unlockAudio() {
 document.body.addEventListener('touchstart', unlockAudio, { once: true });
 document.body.addEventListener('click', unlockAudio, { once: true });
 
+// LOOP BUTTON
 const loopButton = document.getElementById('loop');
 loopButton.addEventListener('click', () => {
   const current = ctx.currentTime - startAt;
@@ -188,7 +185,7 @@ timeRow.appendChild(totalTimeEl);
 progressContainer.appendChild(progress);
 progressContainer.appendChild(timeRow);
 
-// ✅ Parallel loading with progress counter
+// LOAD STEMS
 async function loadStems() {
   const loadingOverlay = document.getElementById("loadingOverlay");
   const loadingText = document.getElementById("loadingText");
@@ -217,6 +214,7 @@ async function loadStems() {
   loadingOverlay.style.display = "none";
 }
 
+// MARKERS
 async function loadMarkersFile(url) {
   try {
     const res = await fetch(url);
@@ -260,7 +258,8 @@ function renderBookmarks(sections) {
   });
 }
 
-function seekAbsolute(sec) {
+// SEEK FUNCTION (works with Lead-In)
+async function seekAbsolute(sec) {
   const targetTime = Math.max(0, sec - (leadInEnabled ? 5 : 0));
   pausedAt = targetTime;
 
@@ -270,16 +269,15 @@ function seekAbsolute(sec) {
     currentTimeEl.textContent = formatTime(targetTime);
   }
 
-  // if currently playing, restart immediately
   if (playing) {
-    stopPlayback();
+    if (ctx.state === 'suspended') await ctx.resume();
     startPlayback(targetTime);
   } else {
     currentTimeEl.textContent = formatTime(targetTime);
   }
 }
 
-
+// CORE PLAYER FUNCTIONS
 function getTotalDuration() {
   return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
 }
@@ -417,7 +415,6 @@ document.getElementById('stop').onclick = () => {
   currentTimeEl.textContent = '0:00';
 };
 document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
-
 
 loadStems();
 </script>
