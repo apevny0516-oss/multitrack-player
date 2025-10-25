@@ -1,290 +1,244 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Multitrack Player</title>
-<style>
-body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
-.track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 1rem; }
-button.active { background-color: #007bff; color: white; border-color: #007bff; }
-.progress-container { margin-top: 1rem; position: relative; }
-.time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
-.loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
-#bookmarksPanel h3 { margin-bottom: 0.75rem; }
-#bookmarksPanel button {
-  font-size: 1.2rem;
-  font-weight: bold;
-  margin-bottom: 0.6rem;
-  padding: 0.5rem 0.75rem;
-  display: block;
-  width: 100%;
-  text-align: left;
-}
-.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.volume-line {
-  flex-basis: 100%;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-}
-@media (max-width: 600px) {
-  .volume-line { flex-direction: column; align-items: flex-start; }
-}
-#loadingOverlay {
-  position: fixed;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(255,255,255,0.9);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.5rem; font-weight: bold; color: #333;
-  z-index: 999; flex-direction: column;
-}
-</style>
-</head>
-<body>
-<h2 id="pageTitle">Multitrack Player</h2>
-<div id="loadingOverlay"><div id="loadingText">Now Loading...</div></div>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multitrack Player (Canvas Embed)</title>
+  <style>
+    /* --- Scoped styles so we don't fight Canvas LMS CSS --- */
+    :root { --mtp-accent:#0b5cff; --mtp-bg:#111827; --mtp-card:#1f2937; --mtp-text:#e5e7eb; --mtp-sub:#9ca3af; }
+    @media (prefers-color-scheme: light) {
+      :root { --mtp-bg:#f7f7fb; --mtp-card:#ffffff; --mtp-text:#111827; --mtp-sub:#6b7280; }
+    }
+    #mtp-root { box-sizing:border-box; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--mtp-text); background:transparent; }
+    #mtp-wrap { background:var(--mtp-card); border:1px solid rgba(0,0,0,.08); border-radius:12px; padding:12px; box-shadow:0 4px 20px rgba(0,0,0,.12); max-width:100%; }
+    #mtp-title { margin:0 0 8px; font-size:18px; font-weight:700; }
+    .mtp-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .mtp-controls button { cursor:pointer; border:1px solid rgba(0,0,0,.2); background:#1118270d; color:inherit; border-radius:8px; padding:6px 10px; }
+    .mtp-controls button.active { background: var(--mtp-accent); color:#fff; border-color:var(--mtp-accent); }
+    .mtp-slider { appearance:none; width:100%; height:6px; border-radius:999px; background:#00000020; outline:none; }
+    .mtp-slider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%; background:var(--mtp-accent); cursor:pointer; border:none; }
+    .mtp-time { display:flex; justify-content:space-between; color:var(--mtp-sub); font-size:12px; margin-top:4px; }
+    .mtp-track { background: #00000008; border:1px solid #00000014; padding:10px; border-radius:10px; margin-top:8px; }
+    .mtp-track strong { display:block; margin-bottom:6px; font-weight:700; }
+    .mtp-progress { margin-top:8px; position:relative; }
+    .mtp-loop { position:absolute; top:50%; height:6px; background: color-mix(in srgb, var(--mtp-accent) 35%, transparent); border-radius:3px; transform: translateY(-50%); pointer-events:none; display:none; }
+    .mtp-bookmarks h3 { margin:14px 0 8px; font-size:14px; }
+    .mtp-bookmarks button { width:100%; text-align:left; font-weight:700; padding:8px 10px; border-radius:10px; border:1px solid #00000014; background:#00000006; margin-bottom:6px; cursor:pointer; }
 
-<div class="controls">
-  <button id="play">▶️</button>
-  <button id="pause">⏸️</button>
-  <button id="stop">⏹️</button>
-  <button id="loop">Loop Start</button>
-  <button id="leadIn">Lead-In: Off</button>
-  <div class="volume-line">
-    <label for="masterVol">Master Volume</label>
-    <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
+    /* Compact mode for tight embeds */
+    .mtp-compact #mtp-title { font-size:16px; }
+    .mtp-compact .mtp-track { padding:8px; }
+    .mtp-compact .mtp-bookmarks button { font-size:13px; padding:6px 8px; }
+
+    /* Loading overlay */
+    #mtp-loading {
+      position: fixed; inset: 0; background: rgba(255,255,255,.85);
+      display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:9999;
+      color:#111827;
+    }
+    @media (prefers-color-scheme: dark) { #mtp-loading { background: rgba(0,0,0,.6); color:#e5e7eb; } }
+    #mtp-loading p { margin:6px 0 0; font-weight:600; }
+
+    /* Make the whole thing responsive in narrow iframes */
+    @media (max-width: 520px) {
+      .mtp-row { gap:6px; }
+      .mtp-controls button { padding:6px 8px; }
+    }
+  </style>
+</head>
+<body style="margin:0; background:var(--mtp-bg)">
+<div id="mtp-root">
+  <div id="mtp-wrap" class="mtp-controls">
+    <h2 id="mtp-title">Multitrack Player</h2>
+
+    <div class="mtp-row" style="margin-bottom:6px">
+      <button id="mtp-play" title="Play">▶️</button>
+      <button id="mtp-pause" title="Pause">⏸️</button>
+      <button id="mtp-stop" title="Stop">⏹️</button>
+      <button id="mtp-loop">Loop Start</button>
+      <div style="flex:1; min-width:160px; display:flex; align-items:center; gap:8px; margin-left:auto">
+        <label for="mtp-master" style="font-size:12px; color:var(--mtp-sub)">Master</label>
+        <input id="mtp-master" class="mtp-slider" type="range" min="0" max="1" step="0.01" value="1" />
+      </div>
+    </div>
+
+    <div id="mtp-progress" class="mtp-progress">
+      <input id="mtp-progressbar" class="mtp-slider" type="range" min="0" max="1" step="0.001" value="0" />
+      <div id="mtp-loopviz" class="mtp-loop"></div>
+      <div class="mtp-time"><span id="mtp-current">0:00</span><span id="mtp-total">0:00</span></div>
+    </div>
+
+    <div id="mtp-tracks"></div>
+    <div id="mtp-bookmarks" class="mtp-bookmarks"></div>
   </div>
 </div>
 
-<div id="progressContainer" class="progress-container"></div>
-<div id="tracks"></div>
-<div id="bookmarksPanel" style="margin-top:1rem;"></div>
+<div id="mtp-loading" role="status" aria-live="polite">
+  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+  </svg>
+  <p id="mtp-loading-text">Now Loading…</p>
+</div>
 
 <script>
-let leadInEnabled = false;
-document.getElementById('leadIn').addEventListener('click', (e)=>{
-  leadInEnabled = !leadInEnabled;
-  e.target.textContent = `Lead-In: ${leadInEnabled ? 'On' : 'Off'}`;
-  e.target.classList.toggle('active', leadInEnabled);
-});
+(function(){
+  // ===== URL Params =====
+  const params = new URLSearchParams(location.search);
+  const stems = [];
+  let markersFile = null;
+  const titleParam = params.get('title');
+  const compact = params.get('compact') === '1';
 
-const params = new URLSearchParams(window.location.search);
-const stems = [];
-let markersFile = null;
-
-// dynamic title
-const titleParam = params.get("title");
-if (titleParam) {
-  document.title = decodeURIComponent(titleParam);
-  document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
-}
-
-// build stems list with proxy logic
-for (const [key, value] of params.entries()) {
-  const k = key.toLowerCase();
-  if (k === 'title') continue;
-
-  let finalUrl = value;
-  if (finalUrl.includes("googleapis.com/drive")) {
-    const proxy = "https://cors.isomorphic-git.org/";
-    finalUrl = proxy + finalUrl;
+  // Build stems + grab markers
+  for (const [key, value] of params.entries()) {
+    const k = key.toLowerCase();
+    if (k === 'title' || k === 'compact' || k === 'autoplay') continue;
+    if (['markers','lyrics','text'].includes(k)) markersFile = value; else stems.push({ name:key, url:value });
   }
 
-  if (['markers','lyrics','text'].includes(k)) markersFile = finalUrl;
-  else stems.push({ name: key, url: finalUrl });
-}
+  // ===== Elements =====
+  const root = document.getElementById('mtp-root');
+  if (compact) root.classList.add('mtp-compact');
+  const titleEl = document.getElementById('mtp-title');
+  if (titleParam) { document.title = decodeURIComponent(titleParam); titleEl.textContent = decodeURIComponent(titleParam); }
+  const loading = document.getElementById('mtp-loading');
+  const loadingText = document.getElementById('mtp-loading-text');
+  const tracksEl = document.getElementById('mtp-tracks');
+  const bookmarksEl = document.getElementById('mtp-bookmarks');
+  const progressEl = document.getElementById('mtp-progressbar');
+  const loopViz = document.getElementById('mtp-loopviz');
+  const curTimeEl = document.getElementById('mtp-current');
+  const totalTimeEl = document.getElementById('mtp-total');
 
-const ctx = new (window.AudioContext || window.webkitAudioContext)();
-const masterGain = ctx.createGain();
-masterGain.connect(ctx.destination);
+  // ===== Audio graph =====
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const masterGain = ctx.createGain();
+  masterGain.connect(ctx.destination);
 
-const trackData = [];
-let playingNodes = [];
-let startAt = 0, pausedAt = 0, playing = false;
-let loopActive=false, loopStart=null, loopEnd=null, raf;
+  const trackData = [];
+  let playingNodes = [];
+  let startAt = 0, pausedAt = 0, playing = false; let raf;
+  let loopActive = false, loopStart = null, loopEnd = null;
 
-// unlock iOS audio
-function unlockAudio(){
-  const buffer=ctx.createBuffer(1,1,22050);
-  const src=ctx.createBufferSource();
-  src.buffer=buffer; src.connect(ctx.destination); src.start(0);
-  if(ctx.state==='suspended')ctx.resume();
-}
-document.body.addEventListener('touchstart',unlockAudio,{once:true});
-document.body.addEventListener('click',unlockAudio,{once:true});
-
-// LOOP
-const loopButton=document.getElementById('loop');
-loopButton.addEventListener('click',()=>{
-  const current=ctx.currentTime-startAt;
-  if(!loopStart&&!loopEnd){loopStart=current;loopButton.textContent='Loop End';}
-  else if(loopStart&&!loopEnd){
-    loopEnd=current;loopActive=true;
-    loopButton.textContent='Clear Loop';loopButton.classList.add('active');renderLoopHighlight();
-  }else{
-    loopActive=false;loopStart=null;loopEnd=null;
-    loopButton.textContent='Loop Start';loopButton.classList.remove('active');clearLoopHighlight();
+  // iOS/Safari unlock (silent switch)
+  let unlocked = false;
+  function unlock() {
+    if (unlocked) return; unlocked = true;
+    try {
+      const b = ctx.createBuffer(1,1,22050); const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0);
+      if (ctx.state === 'suspended') ctx.resume();
+    } catch(e){}
   }
-});
+  document.addEventListener('touchstart', unlock, {once:true});
+  document.addEventListener('click', unlock, {once:true});
 
-// PROGRESS UI
-const progressContainer=document.getElementById('progressContainer');
-const progress=document.createElement('input');
-progress.type='range';progress.min=0;progress.max=1;progress.step=0.001;
-progress.style.width='100%';progress.style.display='block';progress.style.marginTop='1rem';
-const loopHighlight=document.createElement('div');loopHighlight.className='loop-highlight';
-progressContainer.appendChild(loopHighlight);
-const timeRow=document.createElement('div');timeRow.className='time';
-const currentTimeEl=document.createElement('span');currentTimeEl.textContent='0:00';
-const totalTimeEl=document.createElement('span');totalTimeEl.textContent='0:00';
-timeRow.appendChild(currentTimeEl);timeRow.appendChild(totalTimeEl);
-progressContainer.appendChild(progress);progressContainer.appendChild(timeRow);
+  // ===== Controls =====
+  const $ = id => document.getElementById(id);
+  $('mtp-play').onclick = () => { if (ctx.state === 'suspended') ctx.resume(); if (!playing) startPlayback(pausedAt); };
+  $('mtp-pause').onclick = pausePlayback;
+  $('mtp-stop').onclick = () => { pausedAt = 0; stopPlayback(); progressEl.value = 0; curTimeEl.textContent = '0:00'; };
+  $('mtp-master').oninput = e => { masterGain.gain.value = e.target.value; };
 
-// LOAD STEMS
-async function loadStems(){
-  const overlay=document.getElementById("loadingOverlay");
-  const text=document.getElementById("loadingText");
-  let loaded=0,total=stems.length;
-  for(const s of stems){
-    try{
-      const res=await fetch(s.url);
-      if(!res.ok)throw new Error(`HTTP ${res.status}`);
-      const arr=await res.arrayBuffer();
-      const buf=await ctx.decodeAudioData(arr);
-      trackData.push({...s,buffer:buf,gain:1,muted:false,solo:false});
-      loaded++; text.textContent=`Loading ${loaded} of ${total}...`;
-    }catch(e){
-      console.error("Error loading",s.url,e);
-      loaded++; text.textContent=`Error loading ${s.name}`;
+  // Keyboard space toggles play/pause to help inside iframes
+  window.addEventListener('keydown', (e)=>{
+    if (e.code === 'Space') { e.preventDefault(); playing ? $('mtp-pause').click() : $('mtp-play').click(); }
+  });
+
+  // Loop button
+  const loopBtn = $('mtp-loop');
+  loopBtn.addEventListener('click', ()=>{
+    const current = Math.max(0, ctx.currentTime - startAt);
+    if (!loopStart && !loopEnd) { loopStart = current; loopBtn.textContent = 'Loop End'; }
+    else if (loopStart && !loopEnd) { loopEnd = current; loopActive = true; loopBtn.textContent = 'Clear Loop'; loopBtn.classList.add('active'); renderLoopViz(); }
+    else { loopActive = false; loopStart = loopEnd = null; loopBtn.textContent='Loop Start'; loopBtn.classList.remove('active'); loopViz.style.display='none'; }
+  });
+
+  // ===== Loaders =====
+  async function loadStems(){
+    let loaded=0, total=stems.length; if (!total) { loadingText.textContent='No stems found in URL.'; }
+    await Promise.all(stems.map(async (s)=>{
+      try {
+        const res = await fetch(s.url, {mode:'cors'});
+        const arr = await res.arrayBuffer();
+        const buf = await ctx.decodeAudioData(arr);
+        trackData.push({...s, buffer:buf, gain:1, muted:false, solo:false});
+        loaded++; loadingText.textContent = `Loading ${loaded} of ${total}…`;
+      } catch(err){ console.error('Stem load error', s.url, err); loaded++; loadingText.textContent = `Loading ${loaded} of ${total} (error)`; }
+    }));
+    renderTracks(); updateDuration(); if (markersFile) await loadMarkers(markersFile); loading.style.display='none';
+    if (params.get('autoplay')==='1') { // requires user click in most browsers; we best-effort
+      // noop: user must click at least once due to policies; if unlocked already this will work after first click
     }
   }
-  renderTracks();updateDuration();
-  if(markersFile)await loadMarkersFile(markersFile);
-  overlay.style.display="none";
-}
 
-// MARKERS
-async function loadMarkersFile(url){
-  try{
-    const res=await fetch(url);
-    const txt=await res.text();
-    const sections=parseMarkers(txt);
-    renderBookmarks(sections);
-  }catch(e){console.error("Error loading markers",e);}
-}
-function parseMarkers(txt){
-  const r=/(\d+:\d+:\d+\.\d+)\s+Textblock:\s*(.*)/g;const arr=[];let m;
-  while((m=r.exec(txt))!==null){const t=toSec(m[1]);const l=m[2].trim();if(l)arr.push({label:l,time:t});}
-  return arr;
-}
-function toSec(ts){const [h,m,s]=ts.split(':').map(parseFloat);return h*3600+m*60+s;}
+  async function loadMarkers(url){
+    try { const res = await fetch(url); const text = await res.text(); renderBookmarks(parseMarkers(text)); } catch(e){ console.error('Markers error', e); }
+  }
 
-function renderBookmarks(sections){
-  const panel=document.getElementById('bookmarksPanel');
-  panel.innerHTML='<h3>Bookmarks</h3>';
-  if(!sections.length){panel.innerHTML+='<p>No bookmarks.</p>';return;}
-  sections.forEach(sec=>{
-    const b=document.createElement('button');
-    b.textContent=`${fmt(sec.time)} – ${sec.label}`;
-    b.onclick=()=>seekAbsolute(sec.time);
-    panel.appendChild(b);
-  });
-}
+  function parseMarkers(text){
+    const rx = /(\d+:\d+:\d+\.\d+)\s+Textblock:\s*(.*)/g; const out=[]; let m;
+    while ((m = rx.exec(text)) !== null){ const t = toSec(m[1]); const label=(m[2]||'').trim(); if (label) out.push({label,time:t}); }
+    return out;
+  }
+  function toSec(ts){ const [h,m,s] = ts.split(':').map(parseFloat); return h*3600 + m*60 + s; }
 
-// SEEK with lead-in
-async function seekAbsolute(sec){
-  const t=Math.max(0,sec-(leadInEnabled?5:0));
-  pausedAt=t;
-  const total=getTotalDuration();
-  if(total){progress.value=t/total;currentTimeEl.textContent=fmt(t);}
-  if(playing){if(ctx.state==='suspended')await ctx.resume();startPlayback(t);}
-  else currentTimeEl.textContent=fmt(t);
-}
+  function renderBookmarks(sections){
+    bookmarksEl.innerHTML = '<h3>Bookmarks</h3>';
+    if (!sections.length){ bookmarksEl.insertAdjacentHTML('beforeend','<p style="color:var(--mtp-sub)">No timecoded sections.</p>'); return; }
+    for (const sec of sections){ const b = document.createElement('button'); b.textContent = `${fmt(sec.time)} – ${sec.label}`; b.addEventListener('click', ()=>seekAbsolute(sec.time)); bookmarksEl.appendChild(b); }
+  }
 
-// CORE PLAYER
-function getTotalDuration(){return trackData.reduce((m,t)=>Math.max(m,t.buffer?t.buffer.duration:0),0);}
-function renderTracks(){
-  const c=document.getElementById('tracks');c.innerHTML='';
-  trackData.forEach((t)=>{
-    const d=document.createElement('div');d.className='track';
-    d.innerHTML=`<strong>${t.name}</strong><br>
-      <button data-action="solo">Solo</button>
-      <button data-action="mute">Mute</button>
-      <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>`;
-    d.querySelectorAll('button,input').forEach(el=>{
-      el.addEventListener('click',(e)=>ctrl(e,t));
-      el.addEventListener('input',(e)=>ctrl(e,t));
+  function seekAbsolute(sec){ pausedAt = sec; if (playing) startPlayback(sec); else curTimeEl.textContent = fmt(sec); }
+  function duration(){ return trackData.reduce((m,t)=>Math.max(m, t.buffer? t.buffer.duration:0), 0); }
+
+  function renderTracks(){
+    tracksEl.innerHTML='';
+    trackData.forEach((t,i)=>{
+      const card = document.createElement('div'); card.className='mtp-track';
+      card.innerHTML = `<strong>${t.name}</strong>
+        <div class="mtp-row">
+          <button data-action="solo">Solo</button>
+          <button data-action="mute">Mute</button>
+          <label style="display:flex;align-items:center;gap:8px">Vol <input data-action="gain" class="mtp-slider" type="range" min="0" max="2" step="0.01" value="1"></label>
+        </div>`;
+      card.querySelectorAll('button,input').forEach(el=>{
+        el.addEventListener('click', ev=>ctrl(ev, t, card));
+        el.addEventListener('input', ev=>ctrl(ev, t, card));
+      });
+      tracksEl.appendChild(card);
     });
-    c.appendChild(d);
-  });
-  updateButtons();
-}
-function ctrl(e,track){
-  const a=e.target.dataset.action;
-  if(a==='gain')track.gain=+e.target.value;
-  if(a==='mute')track.muted=!track.muted;
-  if(a==='solo')track.solo=!track.solo;
-  updateButtons();updateGains();
-}
-function updateButtons(){
-  document.querySelectorAll('.track').forEach((div,i)=>{
-    const t=trackData[i];
-    div.querySelector('[data-action="solo"]').classList.toggle('active',t.solo);
-    div.querySelector('[data-action="mute"]').classList.toggle('active',t.muted);
-  });
-}
-function startPlayback(offset=0){
-  const soloed=trackData.some(t=>t.solo);
-  stopPlayback();
-  trackData.forEach(t=>{
-    if(!t.buffer)return;
-    const src=ctx.createBufferSource();
-    src.buffer=t.buffer;
-    const g=ctx.createGain();
-    g.gain.value=t.muted||(soloed&&!t.solo)?0:t.gain;
-    src.connect(g);g.connect(masterGain);
-    src.start(0,offset);
-    playingNodes.push({src,g,t});
-  });
-  startAt=ctx.currentTime-offset;
-  playing=true;
-  updateProgress();
-}
-function stopPlayback(){playingNodes.forEach(p=>{try{p.src.stop();}catch{}});
-  playingNodes=[];playing=false;cancelAnimationFrame(raf);}
-function pausePlayback(){if(!playing)return;pausedAt=ctx.currentTime-startAt;stopPlayback();}
-function updateGains(){
-  const soloed=trackData.some(t=>t.solo);
-  playingNodes.forEach(p=>{
-    p.g.gain.value=soloed?(p.t.solo?p.t.gain:0):(p.t.muted?0:p.t.gain);
-  });
-}
-function updateDuration(){totalTimeEl.textContent=fmt(getTotalDuration());}
-function renderLoopHighlight(){
-  const tot=getTotalDuration();if(!tot||!loopStart||!loopEnd)return;
-  const s=loopStart/tot*100,e=loopEnd/tot*100;
-  loopHighlight.style.left=`${s}%`;loopHighlight.style.width=`${e-s}%`;loopHighlight.style.display='block';
-}
-function clearLoopHighlight(){loopHighlight.style.display='none';}
-function updateProgress(){
-  if(!playing)return;
-  const tot=getTotalDuration(),el=ctx.currentTime-startAt;
-  const val=Math.min(el/tot,1);progress.value=val;currentTimeEl.textContent=fmt(el);
-  if(loopActive&&loopStart!=null&&loopEnd!=null&&el>=loopEnd){startPlayback(loopStart);return;}
-  if(val<1)raf=requestAnimationFrame(updateProgress);
-}
-function fmt(sec){if(!sec||isNaN(sec))return'0:00';
-  const m=Math.floor(sec/60),s=Math.floor(sec%60);return`${m}:${s.toString().padStart(2,'0')}`;}
+    reflectButtons();
+  }
+  function ctrl(e, track, card){ const act=e.target.dataset.action; if (act==='gain') track.gain=+e.target.value; if (act==='mute') track.muted=!track.muted; if (act==='solo') track.solo=!track.solo; reflectButtons(); applyGains(); }
+  function reflectButtons(){ [...document.querySelectorAll('.mtp-track')].forEach((div,idx)=>{ const t=trackData[idx]; const s=div.querySelector('button[data-action="solo"]'); const m=div.querySelector('button[data-action="mute"]'); s.classList.toggle('active', !!t.solo); m.classList.toggle('active', !!t.muted); }); }
 
-document.getElementById('play').onclick=()=>{if(ctx.state==='suspended')ctx.resume();if(!playing)startPlayback(pausedAt);};
-document.getElementById('pause').onclick=pausePlayback;
-document.getElementById('stop').onclick=()=>{pausedAt=0;stopPlayback();progress.value=0;currentTimeEl.textContent='0:00';};
-document.getElementById('masterVol').oninput=e=>{masterGain.gain.value=e.target.value;};
+  function startPlayback(offset=0){ const soloed = trackData.some(t=>t.solo); stopPlayback();
+    trackData.forEach(t=>{ if (!t.buffer) return; const src=ctx.createBufferSource(); src.buffer=t.buffer; const g=ctx.createGain(); g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain; src.connect(g); g.connect(masterGain); src.start(0, offset); playingNodes.push({src,g,t}); });
+    startAt = ctx.currentTime - offset; playing = true; tick(); }
+  function stopPlayback(){ playingNodes.forEach(p=>{ try{p.src.stop();}catch{} }); playingNodes=[]; playing=false; cancelAnimationFrame(raf); }
+  function pausePlayback(){ if (!playing) return; pausedAt = Math.max(0, ctx.currentTime - startAt); stopPlayback(); }
+  function applyGains(){ const soloed = trackData.some(t=>t.solo); playingNodes.forEach(p=>{ p.g.gain.value = soloed ? (p.t.solo? p.t.gain:0) : (p.t.muted?0:p.t.gain); }); }
+  function updateDuration(){ totalTimeEl.textContent = fmt(duration()); }
+  function renderLoopViz(){ const total = duration(); if (!total || loopStart==null || loopEnd==null) return; const a = loopStart/total*100; const b = loopEnd/total*100; loopViz.style.left=a+'%'; loopViz.style.width=(b-a)+'%'; loopViz.style.display='block'; }
 
-loadStems();
+  function tick(){ if (!playing) return; const total = duration(); const elapsed = Math.max(0, ctx.currentTime - startAt); const val = Math.min(elapsed/total,1); progressEl.value = val; curTimeEl.textContent = fmt(elapsed);
+    if (loopActive && loopStart!=null && loopEnd!=null && elapsed >= loopEnd){ startPlayback(loopStart); return; }
+    if (val < 1) raf = requestAnimationFrame(tick);
+  }
+  function fmt(sec){ if (!sec || isNaN(sec)) return '0:00'; const m=Math.floor(sec/60), s=Math.floor(sec%60); return `${m}:${String(s).padStart(2,'0')}`; }
+
+  // Init
+  loadStems();
+})();
 </script>
+
+<!--
+USAGE (Embed in Canvas):
+1) Upload this HTML somewhere accessible (Netlify, GitHub Pages, your site), then embed with:
+   <iframe src="https://yourhost.com/multitrack-player-canvas-embed.html?title=She&Drums=https%3A%2F%2F...drums.mp3&Bass=https%3A%2F%2F...bass.mp3&Guitar=https%3A%2F%2F...guitar.mp3&markers=https%3A%2F%2F...markers.txt&compact=1" width="100%" height="560" allow="autoplay"></iframe>
+2) Query keys become track names; values are direct file URLs. Optional: title, markers, compact=1.
+3) Browser autoplay policies require a user click before sound in many LMS iframes.
+-->
 </body>
 </html>
