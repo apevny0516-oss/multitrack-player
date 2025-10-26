@@ -3,40 +3,25 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Multitrack Player (Canvas-Compatible)</title>
+<title>Multitrack Player (Canvas-Safe)</title>
 <style>
-body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; padding: 16px; }
-h2 { margin-top: 0; }
-.wrapper { max-width: 920px; margin: 0 auto; }
-.track { background: #fff; padding: 12px; margin-bottom: 8px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-button { cursor: pointer; border: 1px solid #d0d7de; border-radius: 8px; padding: 6px 10px; font-size: 14px; background: #fff; }
-button.active { background-color: #0d6efd; color: #fff; border-color: #0d6efd; }
-.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.controls .spacer { flex: 1; }
-.volume-line { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-@media (max-width: 640px) {
-  .volume-line { flex-direction: column; align-items: flex-start; }
-}
-.progress-container { margin-top: 12px; position: relative; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.time { font-size: 12px; display: flex; justify-content: space-between; color: #555; margin-top: 6px; }
-.loop-highlight { position: absolute; top: 38px; height: 6px; background: rgba(13,110,253,.25); border-radius: 3px; transform: translateY(-50%); pointer-events: none; left: 0; width: 0; }
-#bookmarksPanel h3 { margin: 12px 0; }
-#bookmarksPanel button {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  padding: 8px 10px;
-  display: block;
-  width: 100%;
-  text-align: left;
-}
-#loadingOverlay {
-  position: fixed; inset: 0;
-  background: rgba(255,255,255,.92);
-  display: flex; align-items: center; justify-content: center; flex-direction: column;
-  font-size: 18px; font-weight: 700; color: #333; z-index: 9999;
-}
-.small { font-weight: 500; font-size: 12px; opacity: .75; }
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; padding: 16px; }
+  .wrapper { max-width: 920px; margin: 0 auto; }
+  h2 { margin-top: 0; }
+  .panel { background:#fff; padding:12px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .controls .spacer { flex:1; }
+  .track { background:#fff; padding:12px; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.06); margin-top:8px; }
+  button { cursor:pointer; border:1px solid #d0d7de; border-radius:8px; padding:6px 10px; font-size:14px; background:#fff; }
+  button.active { background:#0d6efd; color:#fff; border-color:#0d6efd; }
+  .time { font-size:12px; display:flex; justify-content:space-between; color:#555; margin-top:6px; }
+  .progress-container { position:relative; }
+  .loop-highlight { position:absolute; top:38px; height:6px; background:rgba(13,110,253,.25); border-radius:3px; transform:translateY(-50%); pointer-events:none; left:0; width:0; }
+  #bookmarksPanel h3 { margin: 12px 0; }
+  #bookmarksPanel button { font-size:14px; font-weight:600; margin-bottom:8px; padding:8px 10px; display:block; width:100%; text-align:left; }
+  #loadingOverlay { position:fixed; inset:0; background:rgba(255,255,255,.92); display:flex; align-items:center; justify-content:center; flex-direction:column; font-size:18px; font-weight:700; color:#333; z-index:9999; }
+  .small { font-weight:500; font-size:12px; opacity:.75; }
 </style>
 </head>
 <body>
@@ -45,22 +30,20 @@ button.active { background-color: #0d6efd; color: #fff; border-color: #0d6efd; }
 
   <div id="loadingOverlay">
     <div id="loadingText">Now Loading...</div>
-    <div class="small">If this takes long, Canvas may be gating access for non-enrolled users.</div>
+    <div class="small">Using Canvas-safe playback (no Web Audio).</div>
   </div>
 
-  <div class="controls">
+  <div class="panel controls">
     <button id="play" title="Play">▶️</button>
     <button id="pause" title="Pause">⏸️</button>
     <button id="stop" title="Stop">⏹️</button>
     <button id="loop">Loop Start</button>
     <div class="spacer"></div>
-    <div class="volume-line">
-      <label for="masterVol">Master Volume</label>
-      <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
-    </div>
+    <label for="masterVol">Master</label>
+    <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
   </div>
 
-  <div id="progressContainer" class="progress-container">
+  <div id="progressContainer" class="panel progress-container">
     <div class="loop-highlight" id="loopHighlight"></div>
   </div>
 
@@ -69,7 +52,6 @@ button.active { background-color: #0d6efd; color: #fff; border-color: #0d6efd; }
 </div>
 
 <script>
-// ----- URL PARAMS -----
 const params = new URLSearchParams(window.location.search);
 const stems = [];
 let markersFile = null;
@@ -84,44 +66,20 @@ if (titleParam) {
 for (const [key, value] of params.entries()) {
   const k = key.toLowerCase();
   if (k === 'title') continue;
-  if (['markers','lyrics','text'].includes(k)) {
-    markersFile = value;
-  } else {
-    stems.push({ name: key, url: value });
-  }
+  if (['markers','lyrics','text'].includes(k)) { markersFile = value; }
+  else { stems.push({ name: key, url: value }); }
 }
 
-// ----- AUDIO CONTEXT / MASTER -----
-const ctx = new (window.AudioContext || window.webkitAudioContext)();
-const masterGain = ctx.createGain();
-masterGain.gain.value = 1;
-masterGain.connect(ctx.destination);
-
-// iOS silent switch unlock
-let audioUnlocked = false;
-function unlockAudio() {
-  if (audioUnlocked) return;
-  try {
-    const buffer = ctx.createBuffer(1, 1, 22050);
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.connect(ctx.destination);
-    src.start(0);
-    if (ctx.state === 'suspended') ctx.resume();
-    audioUnlocked = true;
-  } catch (e) {}
-}
-document.body.addEventListener('touchstart', unlockAudio, { once: true });
-document.body.addEventListener('click', unlockAudio, { once: true });
-
-// ----- STATE -----
-const trackData = [];   // { name, url, audioEl, srcNode, gainNode, gain, muted, solo }
+const trackData = [];
+let leader = null;
 let isPlaying = false;
-let leader = null;      // reference audio element for time/progress
 let raf;
+
 let loopActive = false;
 let loopStart = null;
 let loopEnd = null;
+
+let masterVolume = 1;
 
 const loadingOverlay = document.getElementById('loadingOverlay');
 const loadingText = document.getElementById('loadingText');
@@ -129,7 +87,6 @@ const tracksContainer = document.getElementById('tracks');
 const progressContainer = document.getElementById('progressContainer');
 const loopHighlight = document.getElementById('loopHighlight');
 
-// Progress UI
 const slider = document.createElement('input');
 slider.type = 'range'; slider.min = 0; slider.max = 1; slider.step = 0.001; slider.value = 0;
 slider.style.width = '100%'; slider.style.display = 'block';
@@ -141,7 +98,6 @@ timeRow.appendChild(currentTimeEl); timeRow.appendChild(totalTimeEl);
 progressContainer.appendChild(slider);
 progressContainer.appendChild(timeRow);
 
-// ----- HELPERS -----
 function formatTime(sec) {
   if (!sec || isNaN(sec)) return '0:00';
   const m = Math.floor(sec / 60);
@@ -151,9 +107,7 @@ function formatTime(sec) {
 function getTotalDuration() {
   return trackData.reduce((m, t) => Math.max(m, (t.audioEl && isFinite(t.audioEl.duration)) ? t.audioEl.duration : 0), 0);
 }
-function updateDuration() {
-  totalTimeEl.textContent = formatTime(getTotalDuration());
-}
+function updateDuration() { totalTimeEl.textContent = formatTime(getTotalDuration()); }
 function renderLoopUI() {
   const total = getTotalDuration();
   if (!total || loopStart === null || loopEnd === null) { loopHighlight.style.width = 0; return; }
@@ -162,20 +116,23 @@ function renderLoopUI() {
   loopHighlight.style.left = startPct + '%';
   loopHighlight.style.width = (endPct - startPct) + '%';
 }
+function applyVolumes() {
+  const anySolo = trackData.some(t => t.solo);
+  trackData.forEach(t => {
+    const active = anySolo ? t.solo : !t.muted;
+    const eff = active ? (t.baseVol * masterVolume) : 0;
+    t.audioEl.volume = Math.max(0, Math.min(1, eff));
+  });
+}
 
-// ----- LOAD STEMS USING <audio> (Canvas-friendly) -----
 async function loadStems() {
   let loaded = 0, total = stems.length;
-  if (total === 0) {
-    loadingText.textContent = 'No stems in URL. Add like ?Guitar=<url>&Bass=<url>';
-  }
+  if (total === 0) loadingText.textContent = 'No stems in URL. Add like ?Guitar=<url>&Bass=<url>';
   for (const s of stems) {
     const audioEl = new Audio();
     audioEl.src = s.url;
     audioEl.preload = 'auto';
-    audioEl.crossOrigin = 'anonymous'; // safe even if ignored by Canvas
-
-    // wait until it can play
+    audioEl.controls = false;
     await new Promise((resolve) => {
       const onReady = () => { cleanup(); resolve(); };
       const onError = () => { console.warn('Error loading', s.url); cleanup(); resolve(); };
@@ -184,33 +141,21 @@ async function loadStems() {
         audioEl.removeEventListener('loadedmetadata', onReady);
         audioEl.removeEventListener('error', onError);
       };
-      audioEl.addEventListener('canplaythrough', onReady, { once: true });
-      audioEl.addEventListener('loadedmetadata', onReady, { once: true });
-      audioEl.addEventListener('error', onError, { once: true });
+      audioEl.addEventListener('canplaythrough', onReady, { once:true });
+      audioEl.addEventListener('loadedmetadata', onReady, { once:true });
+      audioEl.addEventListener('error', onError, { once:true });
     });
-
-    const srcNode = ctx.createMediaElementSource(audioEl);
-    const gainNode = ctx.createGain();
-    srcNode.connect(gainNode);
-    gainNode.connect(masterGain);
-
-    trackData.push({ name: s.name, url: s.url, audioEl, srcNode, gainNode, gain: 1, muted: false, solo: false });
-    loaded++;
-    loadingText.textContent = `Loading ${loaded} of ${total}...`;
+    trackData.push({ name: s.name, url: s.url, audioEl, baseVol: 1, muted:false, solo:false });
+    loaded++; loadingText.textContent = `Loading ${loaded} of ${total}...`;
   }
-
-  // pick leader
   leader = trackData.length ? trackData[0].audioEl : null;
-
   renderTracks();
   updateDuration();
-
   if (markersFile) await loadMarkersFile(markersFile);
-
   loadingOverlay.style.display = 'none';
+  applyVolumes();
 }
 
-// ----- RENDER TRACK CONTROLS -----
 function renderTracks() {
   tracksContainer.innerHTML = '';
   trackData.forEach((t, idx) => {
@@ -220,15 +165,13 @@ function renderTracks() {
       <strong>${t.name}</strong><br>
       <button data-action="solo" data-idx="${idx}">Solo</button>
       <button data-action="mute" data-idx="${idx}">Mute</button>
-      <label>Vol <input data-action="gain" data-idx="${idx}" type="range" min="0" max="2" step="0.01" value="${t.gain}"></label>
+      <label>Vol <input data-action="gain" data-idx="${idx}" type="range" min="0" max="1" step="0.01" value="${t.baseVol}"></label>
     `;
     tracksContainer.appendChild(div);
   });
-
   tracksContainer.addEventListener('click', onTrackClick);
   tracksContainer.addEventListener('input', onTrackInput);
   refreshButtons();
-  applyGains();
 }
 function onTrackClick(e) {
   const act = e.target.getAttribute('data-action');
@@ -239,15 +182,15 @@ function onTrackClick(e) {
   if (act === 'solo') t.solo = !t.solo;
   if (act === 'mute') t.muted = !t.muted;
   refreshButtons();
-  applyGains();
+  applyVolumes();
 }
 function onTrackInput(e) {
   const act = e.target.getAttribute('data-action');
   if (act !== 'gain') return;
   const idx = Number(e.target.getAttribute('data-idx'));
   const t = trackData[idx];
-  t.gain = Number(e.target.value);
-  applyGains();
+  t.baseVol = Number(e.target.value);
+  applyVolumes();
 }
 function refreshButtons() {
   document.querySelectorAll('button[data-action="solo"]').forEach(btn => {
@@ -259,20 +202,11 @@ function refreshButtons() {
     btn.classList.toggle('active', t.muted);
   });
 }
-function applyGains() {
-  const anySolo = trackData.some(t => t.solo);
-  trackData.forEach(t => {
-    const active = anySolo ? t.solo : !t.muted;
-    t.gainNode.gain.value = active ? t.gain : 0;
-  });
-}
 
-// ----- TRANSPORT -----
 function playAll(fromTime = null) {
-  if (ctx.state === 'suspended') ctx.resume();
   trackData.forEach(t => {
-    if (fromTime !== null) {
-      try { t.audioEl.currentTime = Math.min(fromTime, (isFinite(t.audioEl.duration) ? t.audioEl.duration - 0.05 : fromTime)); } catch(e){}
+    if (fromTime !== null && isFinite(t.audioEl.duration)) {
+      try { t.audioEl.currentTime = Math.min(fromTime, t.audioEl.duration - 0.05); } catch(e){}
     }
     const p = t.audioEl.play();
     if (p && typeof p.catch === 'function') p.catch(()=>{});
@@ -298,7 +232,6 @@ function seekAll(timeSec) {
   currentTimeEl.textContent = formatTime(timeSec);
 }
 
-// ----- LOOP -----
 const loopBtn = document.getElementById('loop');
 loopBtn.addEventListener('click', () => {
   const now = leader ? leader.currentTime : 0;
@@ -318,10 +251,9 @@ function requestTick() {
     const t = leader.currentTime || 0;
     slider.value = total ? Math.min(t / total, 1) : 0;
     currentTimeEl.textContent = formatTime(t);
-
     if (loopActive && loopStart !== null && loopEnd !== null && t >= loopEnd) {
       playAll(loopStart);
-      return; // reset tick on next frame
+      return;
     }
     raf = requestAnimationFrame(tick);
   }
@@ -329,7 +261,6 @@ function requestTick() {
   raf = requestAnimationFrame(tick);
 }
 
-// ----- PROGRESS / SEEK UI -----
 slider.addEventListener('input', () => {
   const total = getTotalDuration();
   const target = total * Number(slider.value);
@@ -337,27 +268,22 @@ slider.addEventListener('input', () => {
   if (isPlaying) playAll(target);
 });
 
-// ----- MASTER VOLUME -----
 document.getElementById('masterVol').addEventListener('input', (e) => {
-  masterGain.gain.value = Number(e.target.value);
+  masterVolume = Number(e.target.value);
+  applyVolumes();
 });
 
-// ----- BOOKMARKS -----
 async function loadMarkersFile(url) {
   try {
     const res = await fetch(url);
     const text = await res.text();
     const sections = parseTimecodedMarkers(text);
     renderBookmarks(sections);
-  } catch (e) {
-    console.error('Error loading markers file', e);
-  }
+  } catch (e) { console.error('Error loading markers file', e); }
 }
 function parseTimecodedMarkers(text) {
-  // expects "HH:MM:SS.sss  Textblock: Label"
-  const regex = /(\\d+:\\d+:\\d+\\.\\d+)\\s+Textblock:\\s*(.*)/g;
-  const results = [];
-  let match;
+  const regex = /(\d+:\d+:\d+\.\d+)\s+Textblock:\s*(.*)/g;
+  const results = []; let match;
   while ((match = regex.exec(text)) !== null) {
     const timeInSeconds = timeToSeconds(match[1]);
     const label = match[2].trim();
@@ -372,10 +298,7 @@ function timeToSeconds(ts) {
 function renderBookmarks(sections) {
   const panel = document.getElementById('bookmarksPanel');
   panel.innerHTML = '<h3>Bookmarks</h3>';
-  if (!sections.length) {
-    panel.innerHTML += '<p>No timecoded sections found.</p>';
-    return;
-  }
+  if (!sections.length) { panel.innerHTML += '<p>No timecoded sections found.</p>'; return; }
   sections.forEach(section => {
     const btn = document.createElement('button');
     btn.textContent = `${formatTime(section.time)} – ${section.label}`;
@@ -387,16 +310,13 @@ function renderBookmarks(sections) {
   });
 }
 
-// ----- TRANSPORT BUTTONS -----
 document.getElementById('play').addEventListener('click', () => {
-  // resume from leader's current time
   const t = leader ? leader.currentTime : 0;
   playAll(t);
 });
 document.getElementById('pause').addEventListener('click', pauseAll);
 document.getElementById('stop').addEventListener('click', stopAll);
 
-// ----- INIT -----
 loadStems();
 </script>
 </body>
