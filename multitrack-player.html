@@ -374,6 +374,15 @@ function updateProgress() {
   if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
 }
 
+progress.addEventListener('input', () => {
+  const total = getTotalDuration();
+  const newTime = progress.value * total;
+  pausedAt = newTime;
+  if (playing) startPlayback(newTime);
+  else currentTimeEl.textContent = formatTime(newTime);
+});
+
+  
 function formatTime(sec) {
   if (!sec || isNaN(sec)) return '0:00';
   const m = Math.floor(sec / 60);
