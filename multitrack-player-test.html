@@ -69,8 +69,6 @@ flex-direction: column;
 <button id="pause" title="Pause">⏸️</button>
 <button id="stop" title="Stop">⏹️</button>
 <button id="loop">Loop Start</button>
-  <label><input type="checkbox" id="preRoll"> 5-Second Pre-Roll</label>
-
 <div class="volume-line">
 <label for="masterVol">Master Volume</label>
 <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
@@ -240,6 +238,7 @@ function timeToSeconds(timestamp) {
 function renderBookmarks(sections) {
   const panel = document.getElementById('bookmarksPanel');
   panel.innerHTML = '<h3>Bookmarks</h3>';
+    <label><input type="checkbox" id="preRoll"> 5-Second Pre-Roll</label><br><br>
   if (!sections.length) {
     panel.innerHTML += '<p>No timecoded sections found.</p>';
     return;
