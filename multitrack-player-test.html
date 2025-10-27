@@ -69,6 +69,8 @@ flex-direction: column;
 <button id="pause" title="Pause">⏸️</button>
 <button id="stop" title="Stop">⏹️</button>
 <button id="loop">Loop Start</button>
+  <label><input type="checkbox" id="preRoll"> 5-Second Pre-Roll</label>
+
 <div class="volume-line">
 <label for="masterVol">Master Volume</label>
 <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
@@ -245,7 +247,12 @@ function renderBookmarks(sections) {
   sections.forEach(section => {
     const btn = document.createElement('button');
     btn.textContent = `${formatTime(section.time)} – ${section.label}`;
-    btn.onclick = () => seekAbsolute(section.time);
+    btn.onclick = () => {
+  const preRoll = document.getElementById('preRoll').checked;
+  const startTime = Math.max(0, section.time - (preRoll ? 5 : 0));
+  seekAbsolute(startTime);
+};
+
     panel.appendChild(btn);
   });
 }
