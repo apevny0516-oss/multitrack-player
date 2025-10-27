@@ -3,275 +3,209 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Multitrack Player (Canvas-Safe)</title>
+<title>Multitrack Player</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; padding: 16px; }
-  .wrapper { max-width: 920px; margin: 0 auto; }
-  h2 { margin-top: 0; }
-  .panel { background:#fff; padding:12px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-  .controls .spacer { flex:1; }
-  .track { background:#fff; padding:12px; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.06); margin-top:8px; }
-  button { cursor:pointer; border:1px solid #d0d7de; border-radius:8px; padding:6px 10px; font-size:14px; background:#fff; }
-  button.active { background:#0d6efd; color:#fff; border-color:#0d6efd; }
-  .time { font-size:12px; display:flex; justify-content:space-between; color:#555; margin-top:6px; }
-  .progress-container { position:relative; }
-  .loop-highlight { position:absolute; top:38px; height:6px; background:rgba(13,110,253,.25); border-radius:3px; transform:translateY(-50%); pointer-events:none; left:0; width:0; }
-  #bookmarksPanel h3 { margin: 12px 0; }
-  #bookmarksPanel button { font-size:14px; font-weight:600; margin-bottom:8px; padding:8px 10px; display:block; width:100%; text-align:left; }
-  #loadingOverlay { position:fixed; inset:0; background:rgba(255,255,255,.92); display:flex; align-items:center; justify-content:center; flex-direction:column; font-size:18px; font-weight:700; color:#333; z-index:9999; }
-  .small { font-weight:500; font-size:12px; opacity:.75; }
+body { font-family: sans-serif; background: #f5f5f5; padding: 1rem; }
+.track { background: white; padding: 1rem; margin-bottom: 0.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+button { cursor: pointer; border: 1px solid #ccc; border-radius: 4px; padding: 0.25rem 0.5rem; font-size: 1rem; }
+button.active { background-color: #007bff; color: white; border-color: #007bff; }
+.progress-container { margin-top: 1rem; position: relative; }
+.time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
+.loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
+
+#bookmarksPanel h3 { margin-bottom: 0.75rem; }
+#bookmarksPanel button {
+font-size: 1.2rem;
+font-weight: bold;
+margin-bottom: 0.6rem;
+padding: 0.5rem 0.75rem;
+display: block;
+width: 100%;
+text-align: left;
+}
+
+.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.volume-line {
+flex-basis: 100%;
+display: flex;
+flex-direction: row;
+align-items: center;
+gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+.volume-line { flex-direction: column; align-items: flex-start; }
+}
+
+/* Loading overlay */
+#loadingOverlay {
+position: fixed;
+top: 0;
+left: 0;
+width: 100%;
+height: 100%;
+background: rgba(255,255,255,0.9);
+display: flex;
+align-items: center;
+justify-content: center;
+font-size: 1.5rem;
+font-weight: bold;
+color: #333;
+z-index: 999;
+flex-direction: column;
+}
 </style>
 </head>
 <body>
-<div class="wrapper">
-  <h2 id="pageTitle">Multitrack Player</h2>
+<h2 id="pageTitle">Multitrack Player</h2>
 
-  <div id="loadingOverlay">
-    <div id="loadingText">Now Loading...</div>
-    <div class="small">Using Canvas-safe playback (no Web Audio).</div>
-  </div>
-
-  <div class="panel controls">
-    <button id="play" title="Play">▶️</button>
-    <button id="pause" title="Pause">⏸️</button>
-    <button id="stop" title="Stop">⏹️</button>
-    <button id="loop">Loop Start</button>
-    <div class="spacer"></div>
-    <label for="masterVol">Master</label>
-    <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
-  </div>
-
-  <div id="progressContainer" class="panel progress-container">
-    <div class="loop-highlight" id="loopHighlight"></div>
-  </div>
-
-  <div id="tracks"></div>
-  <div id="bookmarksPanel" style="margin-top:12px;"></div>
+<div id="loadingOverlay">
+  <div id="loadingText">Now Loading...</div>
 </div>
+
+<div class="controls">
+<button id="play" title="Play">▶️</button>
+<button id="pause" title="Pause">⏸️</button>
+<button id="stop" title="Stop">⏹️</button>
+<button id="loop">Loop Start</button>
+<div class="volume-line">
+<label for="masterVol">Master Volume</label>
+<input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
+</div>
+</div>
+
+<div id="progressContainer" class="progress-container"></div>
+<div id="tracks"></div>
+<div id="bookmarksPanel" style="margin-top:1rem;"></div>
 
 <script>
 const params = new URLSearchParams(window.location.search);
 const stems = [];
 let markersFile = null;
 
-const titleParam = params.get('title');
+// Handle dynamic title
+const titleParam = params.get("title");
 if (titleParam) {
-  const title = decodeURIComponent(titleParam);
-  document.title = title;
-  document.getElementById('pageTitle').textContent = title;
+  document.title = decodeURIComponent(titleParam);
+  document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
 }
 
+// ✅ Fixed: only skip title, not markers
 for (const [key, value] of params.entries()) {
   const k = key.toLowerCase();
   if (k === 'title') continue;
-  if (['markers','lyrics','text'].includes(k)) { markersFile = value; }
-  else { stems.push({ name: key, url: value }); }
+  if (['markers', 'lyrics', 'text'].includes(k)) {
+    markersFile = value;
+  } else {
+    stems.push({ name: key, url: value });
+  }
 }
 
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = ctx.createGain();
+masterGain.connect(ctx.destination);
+
 const trackData = [];
-let leader = null;
-let isPlaying = false;
+let playingNodes = [];
+let startAt = 0, pausedAt = 0, playing = false;
 let raf;
 
 let loopActive = false;
 let loopStart = null;
 let loopEnd = null;
 
-let masterVolume = 1;
+// Unlock iOS audio (silent mode workaround)
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  if (ctx.state === 'suspended') ctx.resume();
+  audioUnlocked = true;
+}
+document.body.addEventListener('touchstart', unlockAudio, { once: true });
+document.body.addEventListener('click', unlockAudio, { once: true });
 
-const loadingOverlay = document.getElementById('loadingOverlay');
-const loadingText = document.getElementById('loadingText');
-const tracksContainer = document.getElementById('tracks');
+const loopButton = document.getElementById('loop');
+loopButton.addEventListener('click', () => {
+  const current = ctx.currentTime - startAt;
+  if (!loopStart && !loopEnd) {
+    loopStart = current;
+    loopButton.textContent = 'Loop End';
+  } else if (loopStart && !loopEnd) {
+    loopEnd = current;
+    loopActive = true;
+    loopButton.textContent = 'Clear Loop';
+    loopButton.classList.add('active');
+    renderLoopHighlight();
+  } else {
+    loopActive = false;
+    loopStart = null;
+    loopEnd = null;
+    loopButton.textContent = 'Loop Start';
+    loopButton.classList.remove('active');
+    clearLoopHighlight();
+  }
+});
+
 const progressContainer = document.getElementById('progressContainer');
-const loopHighlight = document.getElementById('loopHighlight');
+const progress = document.createElement('input');
+progress.type = 'range';
+progress.min = 0;
+progress.max = 1;
+progress.step = 0.001;
+progress.value = 0;
+progress.style.width = '100%';
+progress.style.display = 'block';
+progress.style.marginTop = '1rem';
 
-const slider = document.createElement('input');
-slider.type = 'range'; slider.min = 0; slider.max = 1; slider.step = 0.001; slider.value = 0;
-slider.style.width = '100%'; slider.style.display = 'block';
+const loopHighlight = document.createElement('div');
+loopHighlight.className = 'loop-highlight';
+progressContainer.appendChild(loopHighlight);
+
 const timeRow = document.createElement('div');
 timeRow.className = 'time';
-const currentTimeEl = document.createElement('span'); currentTimeEl.textContent = '0:00';
-const totalTimeEl = document.createElement('span'); totalTimeEl.textContent = '0:00';
-timeRow.appendChild(currentTimeEl); timeRow.appendChild(totalTimeEl);
-progressContainer.appendChild(slider);
+const currentTimeEl = document.createElement('span');
+currentTimeEl.textContent = '0:00';
+const totalTimeEl = document.createElement('span');
+totalTimeEl.textContent = '0:00';
+timeRow.appendChild(currentTimeEl);
+timeRow.appendChild(totalTimeEl);
+progressContainer.appendChild(progress);
 progressContainer.appendChild(timeRow);
 
-function formatTime(sec) {
-  if (!sec || isNaN(sec)) return '0:00';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2,'0')}`;
-}
-function getTotalDuration() {
-  return trackData.reduce((m, t) => Math.max(m, (t.audioEl && isFinite(t.audioEl.duration)) ? t.audioEl.duration : 0), 0);
-}
-function updateDuration() { totalTimeEl.textContent = formatTime(getTotalDuration()); }
-function renderLoopUI() {
-  const total = getTotalDuration();
-  if (!total || loopStart === null || loopEnd === null) { loopHighlight.style.width = 0; return; }
-  const startPct = (loopStart / total) * 100;
-  const endPct = (loopEnd / total) * 100;
-  loopHighlight.style.left = startPct + '%';
-  loopHighlight.style.width = (endPct - startPct) + '%';
-}
-function applyVolumes() {
-  const anySolo = trackData.some(t => t.solo);
-  trackData.forEach(t => {
-    const active = anySolo ? t.solo : !t.muted;
-    const eff = active ? (t.baseVol * masterVolume) : 0;
-    t.audioEl.volume = Math.max(0, Math.min(1, eff));
-  });
-}
-
+// ✅ Parallel loading with progress counter
 async function loadStems() {
-  let loaded = 0, total = stems.length;
-  if (total === 0) loadingText.textContent = 'No stems in URL. Add like ?Guitar=<url>&Bass=<url>';
-  for (const s of stems) {
-    const audioEl = new Audio();
-    audioEl.src = s.url;
-    audioEl.preload = 'auto';
-    audioEl.controls = false;
-    await new Promise((resolve) => {
-      const onReady = () => { cleanup(); resolve(); };
-      const onError = () => { console.warn('Error loading', s.url); cleanup(); resolve(); };
-      const cleanup = () => {
-        audioEl.removeEventListener('canplaythrough', onReady);
-        audioEl.removeEventListener('loadedmetadata', onReady);
-        audioEl.removeEventListener('error', onError);
-      };
-      audioEl.addEventListener('canplaythrough', onReady, { once:true });
-      audioEl.addEventListener('loadedmetadata', onReady, { once:true });
-      audioEl.addEventListener('error', onError, { once:true });
-    });
-    trackData.push({ name: s.name, url: s.url, audioEl, baseVol: 1, muted:false, solo:false });
-    loaded++; loadingText.textContent = `Loading ${loaded} of ${total}...`;
-  }
-  leader = trackData.length ? trackData[0].audioEl : null;
+  const loadingOverlay = document.getElementById("loadingOverlay");
+  const loadingText = document.getElementById("loadingText");
+  let loaded = 0;
+  const total = stems.length;
+
+  await Promise.all(stems.map(async (s) => {
+    try {
+      const res = await fetch(s.url);
+      const arr = await res.arrayBuffer();
+      const buf = await ctx.decodeAudioData(arr);
+      trackData.push({ ...s, buffer: buf, gain: 1, muted: false, solo: false });
+      loaded++;
+      loadingText.textContent = `Loading ${loaded} of ${total}...`;
+    } catch (e) {
+      console.error('Error loading', s.url, e);
+      loaded++;
+      loadingText.textContent = `Loading ${loaded} of ${total} (error)`;
+    }
+  }));
+
+  loadingText.textContent = "Finalizing...";
   renderTracks();
   updateDuration();
   if (markersFile) await loadMarkersFile(markersFile);
-  loadingOverlay.style.display = 'none';
-  applyVolumes();
+  loadingOverlay.style.display = "none";
 }
-
-function renderTracks() {
-  tracksContainer.innerHTML = '';
-  trackData.forEach((t, idx) => {
-    const div = document.createElement('div');
-    div.className = 'track';
-    div.innerHTML = `
-      <strong>${t.name}</strong><br>
-      <button data-action="solo" data-idx="${idx}">Solo</button>
-      <button data-action="mute" data-idx="${idx}">Mute</button>
-      <label>Vol <input data-action="gain" data-idx="${idx}" type="range" min="0" max="1" step="0.01" value="${t.baseVol}"></label>
-    `;
-    tracksContainer.appendChild(div);
-  });
-  tracksContainer.addEventListener('click', onTrackClick);
-  tracksContainer.addEventListener('input', onTrackInput);
-  refreshButtons();
-}
-function onTrackClick(e) {
-  const act = e.target.getAttribute('data-action');
-  if (!act) return;
-  const idx = Number(e.target.getAttribute('data-idx'));
-  const t = trackData[idx];
-  if (!t) return;
-  if (act === 'solo') t.solo = !t.solo;
-  if (act === 'mute') t.muted = !t.muted;
-  refreshButtons();
-  applyVolumes();
-}
-function onTrackInput(e) {
-  const act = e.target.getAttribute('data-action');
-  if (act !== 'gain') return;
-  const idx = Number(e.target.getAttribute('data-idx'));
-  const t = trackData[idx];
-  t.baseVol = Number(e.target.value);
-  applyVolumes();
-}
-function refreshButtons() {
-  document.querySelectorAll('button[data-action="solo"]').forEach(btn => {
-    const t = trackData[Number(btn.getAttribute('data-idx'))];
-    btn.classList.toggle('active', t.solo);
-  });
-  document.querySelectorAll('button[data-action="mute"]').forEach(btn => {
-    const t = trackData[Number(btn.getAttribute('data-idx'))];
-    btn.classList.toggle('active', t.muted);
-  });
-}
-
-function playAll(fromTime = null) {
-  trackData.forEach(t => {
-    if (fromTime !== null && isFinite(t.audioEl.duration)) {
-      try { t.audioEl.currentTime = Math.min(fromTime, t.audioEl.duration - 0.05); } catch(e){}
-    }
-    const p = t.audioEl.play();
-    if (p && typeof p.catch === 'function') p.catch(()=>{});
-  });
-  isPlaying = true;
-  requestTick();
-}
-function pauseAll() {
-  trackData.forEach(t => t.audioEl.pause());
-  isPlaying = false;
-  cancelAnimationFrame(raf);
-}
-function stopAll() {
-  pauseAll();
-  seekAll(0);
-  slider.value = 0;
-  currentTimeEl.textContent = '0:00';
-}
-function seekAll(timeSec) {
-  trackData.forEach(t => {
-    try { t.audioEl.currentTime = Math.min(timeSec, isFinite(t.audioEl.duration) ? t.audioEl.duration - 0.05 : timeSec); } catch(e){}
-  });
-  currentTimeEl.textContent = formatTime(timeSec);
-}
-
-const loopBtn = document.getElementById('loop');
-loopBtn.addEventListener('click', () => {
-  const now = leader ? leader.currentTime : 0;
-  if (loopStart === null && loopEnd === null) {
-    loopStart = now; loopBtn.textContent = 'Loop End';
-  } else if (loopStart !== null && loopEnd === null) {
-    loopEnd = now; loopActive = true; loopBtn.textContent = 'Clear Loop'; loopBtn.classList.add('active'); renderLoopUI();
-  } else {
-    loopActive = false; loopStart = null; loopEnd = null; loopBtn.textContent = 'Loop Start'; loopBtn.classList.remove('active'); renderLoopUI();
-  }
-});
-
-function requestTick() {
-  function tick() {
-    if (!isPlaying || !leader) return;
-    const total = getTotalDuration();
-    const t = leader.currentTime || 0;
-    slider.value = total ? Math.min(t / total, 1) : 0;
-    currentTimeEl.textContent = formatTime(t);
-    if (loopActive && loopStart !== null && loopEnd !== null && t >= loopEnd) {
-      playAll(loopStart);
-      return;
-    }
-    raf = requestAnimationFrame(tick);
-  }
-  cancelAnimationFrame(raf);
-  raf = requestAnimationFrame(tick);
-}
-
-slider.addEventListener('input', () => {
-  const total = getTotalDuration();
-  const target = total * Number(slider.value);
-  seekAll(target);
-  if (isPlaying) playAll(target);
-});
-
-document.getElementById('masterVol').addEventListener('input', (e) => {
-  masterVolume = Number(e.target.value);
-  applyVolumes();
-});
 
 async function loadMarkersFile(url) {
   try {
@@ -279,11 +213,15 @@ async function loadMarkersFile(url) {
     const text = await res.text();
     const sections = parseTimecodedMarkers(text);
     renderBookmarks(sections);
-  } catch (e) { console.error('Error loading markers file', e); }
+  } catch (e) {
+    console.error('Error loading markers file', e);
+  }
 }
+
 function parseTimecodedMarkers(text) {
   const regex = /(\d+:\d+:\d+\.\d+)\s+Textblock:\s*(.*)/g;
-  const results = []; let match;
+  const results = [];
+  let match;
   while ((match = regex.exec(text)) !== null) {
     const timeInSeconds = timeToSeconds(match[1]);
     const label = match[2].trim();
@@ -291,31 +229,179 @@ function parseTimecodedMarkers(text) {
   }
   return results;
 }
-function timeToSeconds(ts) {
-  const [h, m, s] = ts.split(':').map(parseFloat);
+
+function timeToSeconds(timestamp) {
+  const [h, m, s] = timestamp.split(':').map(parseFloat);
   return h * 3600 + m * 60 + s;
 }
+
 function renderBookmarks(sections) {
   const panel = document.getElementById('bookmarksPanel');
   panel.innerHTML = '<h3>Bookmarks</h3>';
-  if (!sections.length) { panel.innerHTML += '<p>No timecoded sections found.</p>'; return; }
+  if (!sections.length) {
+    panel.innerHTML += '<p>No timecoded sections found.</p>';
+    return;
+  }
   sections.forEach(section => {
     const btn = document.createElement('button');
     btn.textContent = `${formatTime(section.time)} – ${section.label}`;
-    btn.addEventListener('click', () => {
-      seekAll(section.time);
-      if (isPlaying) playAll(section.time); else currentTimeEl.textContent = formatTime(section.time);
-    });
+    btn.onclick = () => seekAbsolute(section.time);
     panel.appendChild(btn);
   });
 }
 
-document.getElementById('play').addEventListener('click', () => {
-  const t = leader ? leader.currentTime : 0;
-  playAll(t);
+function seekAbsolute(sec) {
+  pausedAt = sec;
+  if (playing) startPlayback(sec);
+  else currentTimeEl.textContent = formatTime(sec);
+}
+
+function getTotalDuration() {
+  return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
+}
+
+function renderTracks() {
+  const container = document.getElementById('tracks');
+  container.innerHTML = '';
+  trackData.forEach((t) => {
+    const div = document.createElement('div');
+    div.className = 'track';
+    div.innerHTML = `
+      <strong>${t.name}</strong><br>
+      <button data-action="solo">Solo</button>
+      <button data-action="mute">Mute</button>
+      <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
+    `;
+    div.querySelectorAll('button, input').forEach(el => {
+      el.addEventListener('click', (e) => handleTrackControl(e, t, div));
+      el.addEventListener('input', (e) => handleTrackControl(e, t, div));
+    });
+    container.appendChild(div);
+  });
+  updateButtonStates();
+}
+
+function handleTrackControl(e, track) {
+  const act = e.target.dataset.action;
+  if (act === 'gain') track.gain = Number(e.target.value);
+  if (act === 'mute') track.muted = !track.muted;
+  if (act === 'solo') track.solo = !track.solo;
+  updateButtonStates();
+  updateGains();
+}
+
+function updateButtonStates() {
+  document.querySelectorAll('.track').forEach((trackDiv, index) => {
+    const track = trackData[index];
+    const soloBtn = trackDiv.querySelector('button[data-action="solo"]');
+    const muteBtn = trackDiv.querySelector('button[data-action="mute"]');
+    soloBtn.classList.toggle('active', track.solo);
+    muteBtn.classList.toggle('active', track.muted);
+  });
+}
+
+function startPlayback(offset = 0) {
+  const soloed = trackData.some(t => t.solo);
+  stopPlayback();
+  trackData.forEach(t => {
+    if (!t.buffer) return;
+    const src = ctx.createBufferSource();
+    src.buffer = t.buffer;
+    const g = ctx.createGain();
+    g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain;
+    src.connect(g);
+    g.connect(masterGain);
+    src.start(0, offset);
+    playingNodes.push({ src, g, t });
+  });
+  startAt = ctx.currentTime - offset;
+  playing = true;
+  updateProgress();
+}
+
+function stopPlayback() {
+  playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
+  playingNodes = [];
+  playing = false;
+  cancelAnimationFrame(raf);
+}
+
+function pausePlayback() {
+  if (!playing) return;
+  pausedAt = ctx.currentTime - startAt;
+  stopPlayback();
+}
+
+function updateGains() {
+  const soloed = trackData.some(t => t.solo);
+  playingNodes.forEach(p => {
+    p.g.gain.value = soloed ? (p.t.solo ? p.t.gain : 0) : (p.t.muted ? 0 : p.t.gain);
+  });
+}
+
+function updateDuration() {
+  const total = getTotalDuration();
+  totalTimeEl.textContent = formatTime(total);
+}
+
+function renderLoopHighlight() {
+  const total = getTotalDuration();
+  if (!total || !loopStart || !loopEnd) return;
+  const startPct = loopStart / total * 100;
+  const endPct = loopEnd / total * 100;
+  loopHighlight.style.left = `${startPct}%`;
+  loopHighlight.style.width = `${endPct - startPct}%`;
+  loopHighlight.style.display = 'block';
+}
+
+function clearLoopHighlight() {
+  loopHighlight.style.display = 'none';
+}
+
+function updateProgress() {
+  if (!playing) return;
+  const total = getTotalDuration();
+  const elapsed = ctx.currentTime - startAt;
+  const progressValue = Math.min(elapsed / total, 1);
+  progress.value = progressValue;
+  currentTimeEl.textContent = formatTime(elapsed);
+
+  if (loopActive && loopStart !== null && loopEnd !== null && elapsed >= loopEnd) {
+    startPlayback(loopStart);
+    return;
+  }
+
+  if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
+}
+
+progress.addEventListener('input', () => {
+  const total = getTotalDuration();
+  const newTime = progress.value * total;
+  pausedAt = newTime;
+  if (playing) startPlayback(newTime);
+  else currentTimeEl.textContent = formatTime(newTime);
 });
-document.getElementById('pause').addEventListener('click', pauseAll);
-document.getElementById('stop').addEventListener('click', stopAll);
+
+  
+function formatTime(sec) {
+  if (!sec || isNaN(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+document.getElementById('play').onclick = () => {
+  if (ctx.state === 'suspended') ctx.resume();
+  if (!playing) startPlayback(pausedAt);
+};
+document.getElementById('pause').onclick = pausePlayback;
+document.getElementById('stop').onclick = () => {
+  pausedAt = 0;
+  stopPlayback();
+  progress.value = 0;
+  currentTimeEl.textContent = '0:00';
+};
+document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
 
 loadStems();
 </script>
