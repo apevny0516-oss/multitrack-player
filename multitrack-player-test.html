@@ -38,43 +38,77 @@ gap: 0.5rem;
 .volume-line { flex-direction: column; align-items: flex-start; }
 }
 
-/* Loading overlay */
-#loadingOverlay {
+/* Overlays */
+#loadingOverlay, #howToOverlay {
 position: fixed;
 top: 0;
 left: 0;
 width: 100%;
 height: 100%;
-background: rgba(255,255,255,0.9);
+background: rgba(255,255,255,0.95);
 display: flex;
 align-items: center;
 justify-content: center;
-font-size: 1.5rem;
-font-weight: bold;
-color: #333;
 z-index: 999;
 flex-direction: column;
+text-align: center;
+padding: 2rem;
+}
+
+#loadingText { font-size: 1.5rem; font-weight: bold; color: #333; }
+
+#howToOverlay {
+z-index: 1000;
+font-size: 1.1rem;
+color: #333;
+}
+
+#howToOverlay button {
+margin-top: 1rem;
+padding: 0.5rem 1rem;
+font-size: 1.1rem;
+}
+
+/* Floating How To button */
+#howToBtn {
+position: fixed;
+bottom: 1rem;
+right: 1rem;
+z-index: 1001;
+background: #007bff;
+color: white;
+border: none;
+border-radius: 50%;
+width: 48px;
+height: 48px;
+font-size: 1.5rem;
+cursor: pointer;
+box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 </style>
 </head>
 <body>
 <h2 id="pageTitle">Multitrack Player</h2>
-  
-<button id="mobileAudioToggle" style="
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  background: white;
-  border-radius: 50%;
-  border: 1px solid #ccc;
-  padding: 0.5rem;
-  font-size: 1.2rem;
-  z-index: 1000;
-">🔇</button>
 
+<!-- Loading Screen -->
 <div id="loadingOverlay">
   <div id="loadingText">Now Loading...</div>
 </div>
+
+<!-- How To Overlay -->
+<div id="howToOverlay">
+  <h3>How to Use This Player</h3>
+  <p>• Tap ▶️ to play and ⏸️ to pause.<br>
+  • Adjust volumes for each stem below.<br>
+  • Use “Solo” or “Mute” to isolate tracks.<br>
+  • Click “Loop Start” and “Loop End” to loop sections.<br>
+  • Use bookmarks to jump to song sections.<br>
+  • On mobile, tap the screen once to enable audio if muted.</p>
+  <button id="closeHowTo">Got it!</button>
+</div>
+
+<!-- Floating How To Button -->
+<button id="howToBtn" title="Show instructions">?</button>
 
 <div class="controls">
 <button id="play" title="Play">▶️</button>
@@ -98,22 +132,19 @@ const params = new URLSearchParams(window.location.search);
 const stems = [];
 let markersFile = null;
 
-// Handle dynamic title
+// Title from URL
 const titleParam = params.get("title");
 if (titleParam) {
   document.title = decodeURIComponent(titleParam);
   document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
 }
 
-// Collect stems and marker file
+// Parse stems
 for (const [key, value] of params.entries()) {
   const k = key.toLowerCase();
   if (k === 'title') continue;
-  if (['markers', 'lyrics', 'text'].includes(k)) {
-    markersFile = value;
-  } else {
-    stems.push({ name: key, url: value });
-  }
+  if (['markers','lyrics','text'].includes(k)) markersFile = value;
+  else stems.push({ name: key, url: value });
 }
 
 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -122,14 +153,10 @@ masterGain.connect(ctx.destination);
 
 const trackData = [];
 let playingNodes = [];
-let startAt = 0, pausedAt = 0, playing = false;
-let raf;
-let loopActive = false;
-let loopStart = null;
-let loopEnd = null;
+let startAt = 0, pausedAt = 0, playing = false, raf;
+let loopActive = false, loopStart = null, loopEnd = null;
 
-// ✅ iOS / Mobile audio unlock + mute indicator
-const mobileAudioToggle = document.getElementById('mobileAudioToggle');
+// Unlock iOS audio
 let audioUnlocked = false;
 function unlockAudio() {
   if (audioUnlocked) return;
@@ -140,16 +167,11 @@ function unlockAudio() {
   source.start(0);
   if (ctx.state === 'suspended') ctx.resume();
   audioUnlocked = true;
-  mobileAudioToggle.textContent = "🔊";
 }
 document.body.addEventListener('touchstart', unlockAudio, { once: true });
 document.body.addEventListener('click', unlockAudio, { once: true });
-mobileAudioToggle.addEventListener('click', () => {
-  unlockAudio();
-  alert("Audio unlocked! You can now hear sound even if your phone is in silent mode.");
-});
 
-// LOOP BUTTON
+// Loop button
 const loopButton = document.getElementById('loop');
 loopButton.addEventListener('click', () => {
   const current = ctx.currentTime - startAt;
@@ -172,6 +194,7 @@ loopButton.addEventListener('click', () => {
   }
 });
 
+// Progress bar setup
 const progressContainer = document.getElementById('progressContainer');
 const progress = document.createElement('input');
 progress.type = 'range';
@@ -182,11 +205,9 @@ progress.value = 0;
 progress.style.width = '100%';
 progress.style.display = 'block';
 progress.style.marginTop = '1rem';
-
 const loopHighlight = document.createElement('div');
 loopHighlight.className = 'loop-highlight';
 progressContainer.appendChild(loopHighlight);
-
 const timeRow = document.createElement('div');
 timeRow.className = 'time';
 const currentTimeEl = document.createElement('span');
@@ -198,7 +219,7 @@ timeRow.appendChild(totalTimeEl);
 progressContainer.appendChild(progress);
 progressContainer.appendChild(timeRow);
 
-// ✅ Parallel loading with progress counter
+// Load stems in background
 async function loadStems() {
   const loadingOverlay = document.getElementById("loadingOverlay");
   const loadingText = document.getElementById("loadingText");
@@ -227,206 +248,106 @@ async function loadStems() {
   loadingOverlay.style.display = "none";
 }
 
-async function loadMarkersFile(url) {
-  try {
-    const res = await fetch(url);
-    const text = await res.text();
-    const sections = parseTimecodedMarkers(text);
-    renderBookmarks(sections);
-  } catch (e) {
-    console.error('Error loading markers file', e);
-  }
-}
+// Bookmarks & playback helpers
+function timeToSeconds(timestamp){ const [h,m,s]=timestamp.split(':').map(parseFloat); return h*3600+m*60+s; }
+function formatTime(sec){ if(!sec||isNaN(sec))return'0:00'; const m=Math.floor(sec/60),s=Math.floor(sec%60); return `${m}:${s.toString().padStart(2,'0')}`; }
+function seekAbsolute(sec){ pausedAt=sec; if(playing)startPlayback(sec); else currentTimeEl.textContent=formatTime(sec); }
+function getTotalDuration(){ return trackData.reduce((m,t)=>Math.max(m,t.buffer?t.buffer.duration:0),0); }
 
-function parseTimecodedMarkers(text) {
-  const regex = /(\d+:\d+:\d+\.\d+)\s+Textblock:\s*(.*)/g;
-  const results = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    const timeInSeconds = timeToSeconds(match[1]);
-    const label = match[2].trim();
-    if (label) results.push({ label, time: timeInSeconds });
-  }
-  return results;
-}
-
-function timeToSeconds(timestamp) {
-  const [h, m, s] = timestamp.split(':').map(parseFloat);
-  return h * 3600 + m * 60 + s;
-}
-
-function renderBookmarks(sections) {
-  const panel = document.getElementById('bookmarksPanel');
-  panel.innerHTML = '<h3>Bookmarks</h3>';
-  if (!sections.length) {
-    panel.innerHTML += '<p>No timecoded sections found.</p>';
-    return;
-  }
-  sections.forEach(section => {
-    const btn = document.createElement('button');
-    btn.textContent = `${formatTime(section.time)} – ${section.label}`;
-    btn.onclick = () => {
-      const preRoll = document.getElementById('preRoll').checked;
-      const startTime = Math.max(0, section.time - (preRoll ? 5 : 0));
-      seekAbsolute(startTime);
-    };
-    panel.appendChild(btn);
-  });
-}
-
-function seekAbsolute(sec) {
-  pausedAt = sec;
-  if (playing) startPlayback(sec);
-  else currentTimeEl.textContent = formatTime(sec);
-}
-
-function getTotalDuration() {
-  return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
-}
-
-function renderTracks() {
-  const container = document.getElementById('tracks');
-  container.innerHTML = '';
-  trackData.forEach((t) => {
-    const div = document.createElement('div');
-    div.className = 'track';
-    div.innerHTML = `
-      <strong>${t.name}</strong><br>
+function renderTracks(){
+  const container=document.getElementById('tracks');
+  container.innerHTML='';
+  trackData.forEach((t)=>{
+    const div=document.createElement('div');
+    div.className='track';
+    div.innerHTML=`<strong>${t.name}</strong><br>
       <button data-action="solo">Solo</button>
       <button data-action="mute">Mute</button>
-      <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
-    `;
-    div.querySelectorAll('button, input').forEach(el => {
-      el.addEventListener('click', (e) => handleTrackControl(e, t, div));
-      el.addEventListener('input', (e) => handleTrackControl(e, t, div));
+      <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>`;
+    div.querySelectorAll('button,input').forEach(el=>{
+      el.addEventListener('click',(e)=>handleTrackControl(e,t,div));
+      el.addEventListener('input',(e)=>handleTrackControl(e,t,div));
     });
     container.appendChild(div);
   });
   updateButtonStates();
 }
 
-function handleTrackControl(e, track) {
-  const act = e.target.dataset.action;
-  if (act === 'gain') track.gain = Number(e.target.value);
-  if (act === 'mute') track.muted = !track.muted;
-  if (act === 'solo') track.solo = !track.solo;
+function handleTrackControl(e,track){
+  const act=e.target.dataset.action;
+  if(act==='gain')track.gain=Number(e.target.value);
+  if(act==='mute')track.muted=!track.muted;
+  if(act==='solo')track.solo=!track.solo;
   updateButtonStates();
   updateGains();
 }
 
-function updateButtonStates() {
-  document.querySelectorAll('.track').forEach((trackDiv, index) => {
-    const track = trackData[index];
-    const soloBtn = trackDiv.querySelector('button[data-action="solo"]');
-    const muteBtn = trackDiv.querySelector('button[data-action="mute"]');
-    soloBtn.classList.toggle('active', track.solo);
-    muteBtn.classList.toggle('active', track.muted);
+function updateButtonStates(){
+  document.querySelectorAll('.track').forEach((trackDiv,index)=>{
+    const track=trackData[index];
+    const soloBtn=trackDiv.querySelector('button[data-action="solo"]');
+    const muteBtn=trackDiv.querySelector('button[data-action="mute"]');
+    soloBtn.classList.toggle('active',track.solo);
+    muteBtn.classList.toggle('active',track.muted);
   });
 }
 
-function startPlayback(offset = 0) {
-  const soloed = trackData.some(t => t.solo);
+function startPlayback(offset=0){
+  const soloed=trackData.some(t=>t.solo);
   stopPlayback();
-  trackData.forEach(t => {
-    if (!t.buffer) return;
-    const src = ctx.createBufferSource();
-    src.buffer = t.buffer;
-    const g = ctx.createGain();
-    g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain;
+  trackData.forEach(t=>{
+    if(!t.buffer)return;
+    const src=ctx.createBufferSource();
+    src.buffer=t.buffer;
+    const g=ctx.createGain();
+    g.gain.value=t.muted||(soloed&&!t.solo)?0:t.gain;
     src.connect(g);
     g.connect(masterGain);
-    src.start(0, offset);
-    playingNodes.push({ src, g, t });
+    src.start(0,offset);
+    playingNodes.push({src,g,t});
   });
-  startAt = ctx.currentTime - offset;
-  playing = true;
+  startAt=ctx.currentTime-offset;
+  playing=true;
   updateProgress();
 }
 
-function stopPlayback() {
-  playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
-  playingNodes = [];
-  playing = false;
-  cancelAnimationFrame(raf);
+function stopPlayback(){ playingNodes.forEach(p=>{try{p.src.stop();}catch(e){}}); playingNodes=[]; playing=false; cancelAnimationFrame(raf);}
+function pausePlayback(){ if(!playing)return; pausedAt=ctx.currentTime-startAt; stopPlayback();}
+function updateGains(){ const soloed=trackData.some(t=>t.solo); playingNodes.forEach(p=>{p.g.gain.value=soloed?(p.t.solo?p.t.gain:0):(p.t.muted?0:p.t.gain);});}
+function updateDuration(){ const total=getTotalDuration(); totalTimeEl.textContent=formatTime(total);}
+function renderLoopHighlight(){ const total=getTotalDuration(); if(!total||!loopStart||!loopEnd)return; const startPct=loopStart/total*100,endPct=loopEnd/total*100; loopHighlight.style.left=`${startPct}%`; loopHighlight.style.width=`${endPct-startPct}%`; loopHighlight.style.display='block';}
+function clearLoopHighlight(){ loopHighlight.style.display='none';}
+
+function updateProgress(){
+  if(!playing)return;
+  const total=getTotalDuration();
+  const elapsed=ctx.currentTime-startAt;
+  const progressValue=Math.min(elapsed/total,1);
+  progress.value=progressValue;
+  currentTimeEl.textContent=formatTime(elapsed);
+  if(loopActive&&loopStart!==null&&loopEnd!==null&&elapsed>=loopEnd){ startPlayback(loopStart); return; }
+  if(progressValue<1)raf=requestAnimationFrame(updateProgress);
 }
 
-function pausePlayback() {
-  if (!playing) return;
-  pausedAt = ctx.currentTime - startAt;
-  stopPlayback();
-}
-
-function updateGains() {
-  const soloed = trackData.some(t => t.solo);
-  playingNodes.forEach(p => {
-    p.g.gain.value = soloed ? (p.t.solo ? p.t.gain : 0) : (p.t.muted ? 0 : p.t.gain);
-  });
-}
-
-function updateDuration() {
-  const total = getTotalDuration();
-  totalTimeEl.textContent = formatTime(total);
-}
-
-function renderLoopHighlight() {
-  const total = getTotalDuration();
-  if (!total || !loopStart || !loopEnd) return;
-  const startPct = loopStart / total * 100;
-  const endPct = loopEnd / total * 100;
-  loopHighlight.style.left = `${startPct}%`;
-  loopHighlight.style.width = `${endPct - startPct}%`;
-  loopHighlight.style.display = 'block';
-}
-
-function clearLoopHighlight() {
-  loopHighlight.style.display = 'none';
-}
-
-function updateProgress() {
-  if (!playing) return;
-  const total = getTotalDuration();
-  const elapsed = ctx.currentTime - startAt;
-  const progressValue = Math.min(elapsed / total, 1);
-  progress.value = progressValue;
-  currentTimeEl.textContent = formatTime(elapsed);
-
-  if (loopActive && loopStart !== null && loopEnd !== null && elapsed >= loopEnd) {
-    startPlayback(loopStart);
-    return;
-  }
-
-  if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
-}
-
-progress.addEventListener('input', () => {
-  const total = getTotalDuration();
-  const newTime = progress.value * total;
-  pausedAt = newTime;
-  if (playing) startPlayback(newTime);
-  else currentTimeEl.textContent = formatTime(newTime);
+progress.addEventListener('input',()=>{
+  const total=getTotalDuration();
+  const newTime=progress.value*total;
+  pausedAt=newTime;
+  if(playing)startPlayback(newTime);
+  else currentTimeEl.textContent=formatTime(newTime);
 });
 
-function formatTime(sec) {
-  if (!sec || isNaN(sec)) return '0:00';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
+document.getElementById('play').onclick=()=>{ if(ctx.state==='suspended')ctx.resume(); if(!playing)startPlayback(pausedAt);};
+document.getElementById('pause').onclick=pausePlayback;
+document.getElementById('stop').onclick=()=>{ pausedAt=0; stopPlayback(); progress.value=0; currentTimeEl.textContent='0:00';};
+document.getElementById('masterVol').oninput=(e)=>{ masterGain.gain.value=e.target.value;};
 
-document.getElementById('play').onclick = () => {
-  if (ctx.state === 'suspended') ctx.resume();
-  if (!playing) startPlayback(pausedAt);
-};
-document.getElementById('pause').onclick = pausePlayback;
-document.getElementById('stop').onclick = () => {
-  pausedAt = 0;
-  stopPlayback();
-  progress.value = 0;
-  currentTimeEl.textContent = '0:00';
-};
-document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
-
+// Load everything
 loadStems();
+
+// How To controls
+document.getElementById('closeHowTo').onclick=()=>{ document.getElementById('howToOverlay').style.display='none'; };
+document.getElementById('howToBtn').onclick=()=>{ document.getElementById('howToOverlay').style.display='flex'; };
 </script>
 </body>
 </html>
