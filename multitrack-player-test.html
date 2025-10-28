@@ -81,7 +81,7 @@ flex-direction: column;
 <button id="pause" title="Pause">⏸️</button>
 <button id="stop" title="Stop">⏹️</button>
 <button id="loop">Loop Start</button>
-  <label><input type="checkbox" id="preRoll"> 5-Second Pre-Roll</label>
+<label><input type="checkbox" id="preRoll"> 5-Second Pre-Roll</label>
 
 <div class="volume-line">
 <label for="masterVol">Master Volume</label>
@@ -105,7 +105,7 @@ if (titleParam) {
   document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
 }
 
-// ✅ Fixed: only skip title, not markers
+// Collect stems and marker file
 for (const [key, value] of params.entries()) {
   const k = key.toLowerCase();
   if (k === 'title') continue;
@@ -124,12 +124,12 @@ const trackData = [];
 let playingNodes = [];
 let startAt = 0, pausedAt = 0, playing = false;
 let raf;
-
 let loopActive = false;
 let loopStart = null;
 let loopEnd = null;
 
-// Unlock iOS audio (silent mode workaround)
+// ✅ iOS / Mobile audio unlock + mute indicator
+const mobileAudioToggle = document.getElementById('mobileAudioToggle');
 let audioUnlocked = false;
 function unlockAudio() {
   if (audioUnlocked) return;
@@ -140,10 +140,16 @@ function unlockAudio() {
   source.start(0);
   if (ctx.state === 'suspended') ctx.resume();
   audioUnlocked = true;
+  mobileAudioToggle.textContent = "🔊";
 }
 document.body.addEventListener('touchstart', unlockAudio, { once: true });
 document.body.addEventListener('click', unlockAudio, { once: true });
+mobileAudioToggle.addEventListener('click', () => {
+  unlockAudio();
+  alert("Audio unlocked! You can now hear sound even if your phone is in silent mode.");
+});
 
+// LOOP BUTTON
 const loopButton = document.getElementById('loop');
 loopButton.addEventListener('click', () => {
   const current = ctx.currentTime - startAt;
@@ -260,11 +266,10 @@ function renderBookmarks(sections) {
     const btn = document.createElement('button');
     btn.textContent = `${formatTime(section.time)} – ${section.label}`;
     btn.onclick = () => {
-  const preRoll = document.getElementById('preRoll').checked;
-  const startTime = Math.max(0, section.time - (preRoll ? 5 : 0));
-  seekAbsolute(startTime);
-};
-
+      const preRoll = document.getElementById('preRoll').checked;
+      const startTime = Math.max(0, section.time - (preRoll ? 5 : 0));
+      seekAbsolute(startTime);
+    };
     panel.appendChild(btn);
   });
 }
@@ -401,7 +406,6 @@ progress.addEventListener('input', () => {
   else currentTimeEl.textContent = formatTime(newTime);
 });
 
-  
 function formatTime(sec) {
   if (!sec || isNaN(sec)) return '0:00';
   const m = Math.floor(sec / 60);
@@ -423,26 +427,6 @@ document.getElementById('stop').onclick = () => {
 document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
 
 loadStems();
-  const mobileAudioToggle = document.getElementById('mobileAudioToggle');
-let audioUnlocked = false;
-
-function unlockAudio() {
-  if (audioUnlocked) return;
-  const buffer = ctx.createBuffer(1, 1, 22050);
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ctx.destination);
-  source.start(0);
-  ctx.resume();
-  audioUnlocked = true;
-  mobileAudioToggle.textContent = "🔊";
-}
-
-mobileAudioToggle.addEventListener('click', () => {
-  unlockAudio();
-  alert("Audio unlocked! You can now hear sound even if your phone is in silent mode.");
-});
-
 </script>
 </body>
 </html>
