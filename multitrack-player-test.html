@@ -423,6 +423,26 @@ document.getElementById('stop').onclick = () => {
 document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
 
 loadStems();
+  const mobileAudioToggle = document.getElementById('mobileAudioToggle');
+let audioUnlocked = false;
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  ctx.resume();
+  audioUnlocked = true;
+  mobileAudioToggle.textContent = "🔊";
+}
+
+mobileAudioToggle.addEventListener('click', () => {
+  unlockAudio();
+  alert("Audio unlocked! You can now hear sound even if your phone is in silent mode.");
+});
+
 </script>
 </body>
 </html>
