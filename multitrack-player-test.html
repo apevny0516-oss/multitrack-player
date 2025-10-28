@@ -211,9 +211,17 @@ async function loadStems() {
     }
   }));
   loadingText.textContent = "Finalizing...";
-  renderTracks(); updateDuration();
+
+try {
+  renderTracks();
+  updateDuration();
   if (markersFile) await loadMarkersFile(markersFile);
-  loadingOverlay.style.display = "none";
+} catch (err) {
+  console.warn("Finalization skipped due to error:", err);
+}
+
+loadingOverlay.style.display = "none";
+
 }
 function timeToSeconds(timestamp){ const [h,m,s]=timestamp.split(':').map(parseFloat); return h*3600+m*60+s; }
 function formatTime(sec){ if(!sec||isNaN(sec))return'0:00'; const m=Math.floor(sec/60),s=Math.floor(sec%60); return `${m}:${s.toString().padStart(2,'0')}`; }
