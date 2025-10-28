@@ -13,7 +13,7 @@ button.active { background-color: #007bff; color: white; border-color: #007bff; 
 .time { font-size: 0.8rem; display: flex; justify-content: space-between; color: #555; }
 .loop-highlight { position: absolute; top: 50%; height: 6px; background: rgba(0,123,255,0.3); border-radius: 3px; transform: translateY(-50%); pointer-events: none; }
 
-#bookmarksPanel h3 { margin-bottom: 0.75rem; }
+#bookmarksPanel h3 { margin-bottom: 0.5rem; }
 #bookmarksPanel button {
 font-size: 1.2rem;
 font-weight: bold;
@@ -38,37 +38,81 @@ gap: 0.5rem;
 .volume-line { flex-direction: column; align-items: flex-start; }
 }
 
-/* Loading overlay */
-#loadingOverlay {
+/* Overlays */
+#loadingOverlay, #howToOverlay {
 position: fixed;
 top: 0;
 left: 0;
 width: 100%;
 height: 100%;
-background: rgba(255,255,255,0.9);
+background: rgba(255,255,255,0.95);
 display: flex;
 align-items: center;
 justify-content: center;
-font-size: 1.5rem;
-font-weight: bold;
-color: #333;
 z-index: 999;
 flex-direction: column;
+text-align: center;
+padding: 2rem;
+}
+
+#loadingText { font-size: 1.5rem; font-weight: bold; color: #333; }
+
+#howToOverlay {
+z-index: 1000;
+font-size: 1.1rem;
+color: #333;
+}
+
+#howToOverlay button {
+margin-top: 1rem;
+padding: 0.5rem 1rem;
+font-size: 1.1rem;
+}
+
+/* Floating How To button */
+#howToBtn {
+position: fixed;
+bottom: 1rem;
+right: 1rem;
+z-index: 1001;
+background: #007bff;
+color: white;
+border: none;
+border-radius: 50%;
+width: 48px;
+height: 48px;
+font-size: 1.5rem;
+cursor: pointer;
+box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 </style>
 </head>
 <body>
 <h2 id="pageTitle">Multitrack Player</h2>
 
-<div id="loadingOverlay">
-  <div id="loadingText">Now Loading...</div>
+<div id="loadingOverlay"><div id="loadingText">Now Loading...</div></div>
+
+<div id="howToOverlay">
+  <h3>How to Use This Player</h3>
+  <p>• Tap ▶️ to play and ⏸️ to pause.<br>
+  • On mobile, make sure your device is not in Silent Mode.<br>
+  • Adjust volumes for each track below.<br>
+  • Use “Solo” or “Mute” to isolate tracks.<br>
+  • Click “Loop Start” followed by “Loop End” to loop sections.<br>
+  • Use bookmarks to jump to song sections.<br>
+  • Enable 5 second Pre-Roll to add a lead-in before sections<br>
+  • Click the ? icon in the bottom right to bring up this menu again</p>
+  <button id="closeHowTo">Got it!</button>
 </div>
+
+<button id="howToBtn" title="Show instructions">?</button>
 
 <div class="controls">
 <button id="play" title="Play">▶️</button>
 <button id="pause" title="Pause">⏸️</button>
 <button id="stop" title="Stop">⏹️</button>
 <button id="loop">Loop Start</button>
+
 <div class="volume-line">
 <label for="masterVol">Master Volume</label>
 <input id="masterVol" type="range" min="0" max="1" step="0.01" value="1">
@@ -84,38 +128,27 @@ const params = new URLSearchParams(window.location.search);
 const stems = [];
 let markersFile = null;
 
-// Handle dynamic title
 const titleParam = params.get("title");
 if (titleParam) {
   document.title = decodeURIComponent(titleParam);
   document.getElementById("pageTitle").textContent = decodeURIComponent(titleParam);
 }
 
-// ✅ Fixed: only skip title, not markers
 for (const [key, value] of params.entries()) {
   const k = key.toLowerCase();
   if (k === 'title') continue;
-  if (['markers', 'lyrics', 'text'].includes(k)) {
-    markersFile = value;
-  } else {
-    stems.push({ name: key, url: value });
-  }
+  if (['markers','lyrics','text'].includes(k)) markersFile = value;
+  else stems.push({ name: key, url: value });
 }
 
 const ctx = new (window.AudioContext || window.webkitAudioContext)();
 const masterGain = ctx.createGain();
 masterGain.connect(ctx.destination);
-
 const trackData = [];
 let playingNodes = [];
-let startAt = 0, pausedAt = 0, playing = false;
-let raf;
+let startAt = 0, pausedAt = 0, playing = false, raf;
+let loopActive = false, loopStart = null, loopEnd = null;
 
-let loopActive = false;
-let loopStart = null;
-let loopEnd = null;
-
-// Unlock iOS audio (silent mode workaround)
 let audioUnlocked = false;
 function unlockAudio() {
   if (audioUnlocked) return;
@@ -178,7 +211,6 @@ timeRow.appendChild(totalTimeEl);
 progressContainer.appendChild(progress);
 progressContainer.appendChild(timeRow);
 
-// ✅ Parallel loading with progress counter
 async function loadStems() {
   const loadingOverlay = document.getElementById("loadingOverlay");
   const loadingText = document.getElementById("loadingText");
@@ -201,20 +233,27 @@ async function loadStems() {
   }));
 
   loadingText.textContent = "Finalizing...";
-  renderTracks();
-  updateDuration();
-  if (markersFile) await loadMarkersFile(markersFile);
-  loadingOverlay.style.display = "none";
+
+  try {
+    renderTracks();
+    updateDuration();
+    if (markersFile) await loadMarkersFile(markersFile);
+  } catch (err) {
+    console.warn("Finalization error:", err);
+  } finally {
+    loadingOverlay.style.display = "none";
+  }
 }
 
 async function loadMarkersFile(url) {
   try {
     const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     const sections = parseTimecodedMarkers(text);
     renderBookmarks(sections);
   } catch (e) {
-    console.error('Error loading markers file', e);
+    console.error("Error loading markers file", e);
   }
 }
 
@@ -230,14 +269,12 @@ function parseTimecodedMarkers(text) {
   return results;
 }
 
-function timeToSeconds(timestamp) {
-  const [h, m, s] = timestamp.split(':').map(parseFloat);
-  return h * 3600 + m * 60 + s;
-}
+function timeToSeconds(timestamp){ const [h,m,s]=timestamp.split(':').map(parseFloat); return h*3600+m*60+s; }
+function formatTime(sec){ if(!sec||isNaN(sec))return'0:00'; const m=Math.floor(sec/60),s=Math.floor(sec%60); return `${m}:${s.toString().padStart(2,'0')}`; }
 
 function renderBookmarks(sections) {
   const panel = document.getElementById('bookmarksPanel');
-  panel.innerHTML = '<h3>Bookmarks</h3>';
+  panel.innerHTML = '<h3>Bookmarks</h3><label><input type="checkbox" id="preRoll"> 5-Second Pre-Roll</label><br><br>';
   if (!sections.length) {
     panel.innerHTML += '<p>No timecoded sections found.</p>';
     return;
@@ -245,165 +282,101 @@ function renderBookmarks(sections) {
   sections.forEach(section => {
     const btn = document.createElement('button');
     btn.textContent = `${formatTime(section.time)} – ${section.label}`;
-    btn.onclick = () => seekAbsolute(section.time);
+    btn.onclick = () => {
+      const preRoll = document.getElementById('preRoll').checked;
+      const startTime = Math.max(0, section.time - (preRoll ? 5 : 0));
+      seekAbsolute(startTime);
+    };
     panel.appendChild(btn);
   });
 }
 
-function seekAbsolute(sec) {
-  pausedAt = sec;
-  if (playing) startPlayback(sec);
-  else currentTimeEl.textContent = formatTime(sec);
-}
-
-function getTotalDuration() {
-  return trackData.reduce((m, t) => Math.max(m, t.buffer ? t.buffer.duration : 0), 0);
-}
-
-function renderTracks() {
-  const container = document.getElementById('tracks');
-  container.innerHTML = '';
-  trackData.forEach((t) => {
-    const div = document.createElement('div');
-    div.className = 'track';
-    div.innerHTML = `
-      <strong>${t.name}</strong><br>
+function seekAbsolute(sec){ pausedAt=sec; if(playing)startPlayback(sec); else currentTimeEl.textContent=formatTime(sec); }
+function getTotalDuration(){ return trackData.reduce((m,t)=>Math.max(m,t.buffer?t.buffer.duration:0),0); }
+function renderTracks(){
+  const container=document.getElementById('tracks'); container.innerHTML='';
+  trackData.forEach((t)=>{
+    const div=document.createElement('div');
+    div.className='track';
+    div.innerHTML=`<strong>${t.name}</strong><br>
       <button data-action="solo">Solo</button>
       <button data-action="mute">Mute</button>
-      <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>
-    `;
-    div.querySelectorAll('button, input').forEach(el => {
-      el.addEventListener('click', (e) => handleTrackControl(e, t, div));
-      el.addEventListener('input', (e) => handleTrackControl(e, t, div));
+      <label>Vol <input data-action="gain" type="range" min="0" max="2" step="0.01" value="1"></label>`;
+    div.querySelectorAll('button,input').forEach(el=>{
+      el.addEventListener('click',(e)=>handleTrackControl(e,t,div));
+      el.addEventListener('input',(e)=>handleTrackControl(e,t,div));
     });
     container.appendChild(div);
   });
   updateButtonStates();
 }
-
-function handleTrackControl(e, track) {
-  const act = e.target.dataset.action;
-  if (act === 'gain') track.gain = Number(e.target.value);
-  if (act === 'mute') track.muted = !track.muted;
-  if (act === 'solo') track.solo = !track.solo;
-  updateButtonStates();
-  updateGains();
+function handleTrackControl(e,track){
+  const act=e.target.dataset.action;
+  if(act==='gain')track.gain=Number(e.target.value);
+  if(act==='mute')track.muted=!track.muted;
+  if(act==='solo')track.solo=!track.solo;
+  updateButtonStates(); updateGains();
 }
-
-function updateButtonStates() {
-  document.querySelectorAll('.track').forEach((trackDiv, index) => {
-    const track = trackData[index];
-    const soloBtn = trackDiv.querySelector('button[data-action="solo"]');
-    const muteBtn = trackDiv.querySelector('button[data-action="mute"]');
-    soloBtn.classList.toggle('active', track.solo);
-    muteBtn.classList.toggle('active', track.muted);
+function updateButtonStates(){
+  document.querySelectorAll('.track').forEach((trackDiv,index)=>{
+    const track=trackData[index];
+    const soloBtn=trackDiv.querySelector('button[data-action="solo"]');
+    const muteBtn=trackDiv.querySelector('button[data-action="mute"]');
+    soloBtn.classList.toggle('active',track.solo);
+    muteBtn.classList.toggle('active',track.muted);
   });
 }
-
-function startPlayback(offset = 0) {
-  const soloed = trackData.some(t => t.solo);
+function startPlayback(offset=0){
+  const soloed=trackData.some(t=>t.solo);
   stopPlayback();
-  trackData.forEach(t => {
-    if (!t.buffer) return;
-    const src = ctx.createBufferSource();
-    src.buffer = t.buffer;
-    const g = ctx.createGain();
-    g.gain.value = t.muted || (soloed && !t.solo) ? 0 : t.gain;
-    src.connect(g);
-    g.connect(masterGain);
-    src.start(0, offset);
-    playingNodes.push({ src, g, t });
+  trackData.forEach(t=>{
+    if(!t.buffer)return;
+    const src=ctx.createBufferSource();
+    src.buffer=t.buffer;
+    const g=ctx.createGain();
+    g.gain.value=t.muted||(soloed&&!t.solo)?0:t.gain;
+    src.connect(g); g.connect(masterGain);
+    src.start(0,offset);
+    playingNodes.push({src,g,t});
   });
-  startAt = ctx.currentTime - offset;
-  playing = true;
+  startAt=ctx.currentTime-offset;
+  playing=true;
   updateProgress();
 }
-
-function stopPlayback() {
-  playingNodes.forEach(p => { try { p.src.stop(); } catch(e){} });
-  playingNodes = [];
-  playing = false;
-  cancelAnimationFrame(raf);
+function stopPlayback(){ playingNodes.forEach(p=>{try{p.src.stop();}catch(e){}}); playingNodes=[]; playing=false; cancelAnimationFrame(raf);}
+function pausePlayback(){ if(!playing)return; pausedAt=ctx.currentTime-startAt; stopPlayback();}
+function updateGains(){ const soloed=trackData.some(t=>t.solo); playingNodes.forEach(p=>{p.g.gain.value=soloed?(p.t.solo?p.t.gain:0):(p.t.muted?0:p.t.gain);});}
+function updateDuration(){ const total=getTotalDuration(); totalTimeEl.textContent=formatTime(total);}
+function renderLoopHighlight(){ const total=getTotalDuration(); if(!total||!loopStart||!loopEnd)return; const startPct=loopStart/total*100,endPct=loopEnd/total*100; loopHighlight.style.left=`${startPct}%`; loopHighlight.style.width=`${endPct-startPct}%`; loopHighlight.style.display='block';}
+function clearLoopHighlight(){ loopHighlight.style.display='none';}
+function updateProgress(){
+  if(!playing)return;
+  const total=getTotalDuration(); const elapsed=ctx.currentTime-startAt;
+  const progressValue=Math.min(elapsed/total,1);
+  progress.value=progressValue; currentTimeEl.textContent=formatTime(elapsed);
+  if(loopActive&&loopStart!==null&&loopEnd!==null&&elapsed>=loopEnd){ startPlayback(loopStart); return; }
+  if(progressValue<1)raf=requestAnimationFrame(updateProgress);
 }
-
-function pausePlayback() {
-  if (!playing) return;
-  pausedAt = ctx.currentTime - startAt;
-  stopPlayback();
-}
-
-function updateGains() {
-  const soloed = trackData.some(t => t.solo);
-  playingNodes.forEach(p => {
-    p.g.gain.value = soloed ? (p.t.solo ? p.t.gain : 0) : (p.t.muted ? 0 : p.t.gain);
-  });
-}
-
-function updateDuration() {
-  const total = getTotalDuration();
-  totalTimeEl.textContent = formatTime(total);
-}
-
-function renderLoopHighlight() {
-  const total = getTotalDuration();
-  if (!total || !loopStart || !loopEnd) return;
-  const startPct = loopStart / total * 100;
-  const endPct = loopEnd / total * 100;
-  loopHighlight.style.left = `${startPct}%`;
-  loopHighlight.style.width = `${endPct - startPct}%`;
-  loopHighlight.style.display = 'block';
-}
-
-function clearLoopHighlight() {
-  loopHighlight.style.display = 'none';
-}
-
-function updateProgress() {
-  if (!playing) return;
-  const total = getTotalDuration();
-  const elapsed = ctx.currentTime - startAt;
-  const progressValue = Math.min(elapsed / total, 1);
-  progress.value = progressValue;
-  currentTimeEl.textContent = formatTime(elapsed);
-
-  if (loopActive && loopStart !== null && loopEnd !== null && elapsed >= loopEnd) {
-    startPlayback(loopStart);
-    return;
-  }
-
-  if (progressValue < 1) raf = requestAnimationFrame(updateProgress);
-}
-
-progress.addEventListener('input', () => {
-  const total = getTotalDuration();
-  const newTime = progress.value * total;
-  pausedAt = newTime;
-  if (playing) startPlayback(newTime);
-  else currentTimeEl.textContent = formatTime(newTime);
+progress.addEventListener('input',()=>{
+  const total=getTotalDuration(); const newTime=progress.value*total;
+  pausedAt=newTime;
+  if(playing)startPlayback(newTime);
+  else currentTimeEl.textContent=formatTime(newTime);
 });
-
-  
-function formatTime(sec) {
-  if (!sec || isNaN(sec)) return '0:00';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-document.getElementById('play').onclick = () => {
-  if (ctx.state === 'suspended') ctx.resume();
-  if (!playing) startPlayback(pausedAt);
-};
-document.getElementById('pause').onclick = pausePlayback;
-document.getElementById('stop').onclick = () => {
-  pausedAt = 0;
-  stopPlayback();
-  progress.value = 0;
-  currentTimeEl.textContent = '0:00';
-};
-document.getElementById('masterVol').oninput = (e) => { masterGain.gain.value = e.target.value; };
-
+document.getElementById('play').onclick=()=>{ if(ctx.state==='suspended')ctx.resume(); if(!playing)startPlayback(pausedAt);};
+document.getElementById('pause').onclick=pausePlayback;
+document.getElementById('stop').onclick=()=>{ pausedAt=0; stopPlayback(); progress.value=0; currentTimeEl.textContent='0:00';};
+document.getElementById('masterVol').oninput=(e)=>{ masterGain.gain.value=e.target.value; };
 loadStems();
+
+// --- How To popup memory logic ---
+const howToOverlay = document.getElementById('howToOverlay');
+const howToBtn = document.getElementById('howToBtn');
+const closeHowTo = document.getElementById('closeHowTo');
+if (localStorage.getItem('playerHowToSeen')) howToOverlay.style.display = 'none';
+else howToOverlay.style.display = 'flex';
+closeHowTo.onclick = () => { howToOverlay.style.display = 'none'; localStorage.setItem('playerHowToSeen', 'true'); };
+howToBtn.onclick = () => { howToOverlay.style.display = 'flex'; };
 </script>
 </body>
 </html>
