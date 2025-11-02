@@ -85,6 +85,105 @@ font-size: 1.5rem;
 cursor: pointer;
 box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
+/* ---- Logic Pro X Theme Matching Section Editor ---- */
+
+/* Background & font */
+body {
+  background: #1b1e22;
+  color: #e6e6e6;
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+/* Card / Track container */
+.track {
+  background: #2a2d31;
+  border: 1px solid #3a3d43;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+}
+
+/* Buttons */
+button {
+  background: linear-gradient(#43464b, #36393e);
+  border: 1px solid #4a4d53;
+  color: #e8e8e8;
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: 0.15s;
+  cursor: pointer;
+}
+
+button:hover {
+  background: linear-gradient(#4b4e54, #3c3f45);
+}
+
+button.active {
+  background: #63a4ff;
+  border-color: #63a4ff;
+  color: #1b1e22;
+}
+
+/* Transport buttons (round Logic style) */
+#play, #pause, #stop {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 1.2rem;
+  font-weight: bold;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#play {
+  background: radial-gradient(circle at 30% 30%, #4bff72, #1ea641);
+  border: 1px solid #1ea641;
+  color: #0d240f;
+  box-shadow: 0 0 8px rgba(75,255,114,0.7);
+}
+#play:hover { box-shadow: 0 0 12px rgba(75,255,114,0.9); }
+
+#pause {
+  background: radial-gradient(circle at 30% 30%, #54585e, #303337);
+  border: 1px solid #4a4d53;
+}
+
+#stop {
+  background: radial-gradient(circle at 30% 30%, #bcbcbc, #707070);
+  border: 1px solid #888;
+  color: #1b1b1b;
+}
+
+/* Range sliders & labels */
+input[type="range"] {
+  accent-color: #63a4ff;
+}
+label { color: #d0d0d0; }
+
+/* Time display */
+.time span { color: #cdd1d4; }
+
+/* Overlay screens */
+#loadingOverlay, #howToOverlay {
+  background: rgba(20,20,20,0.92);
+  color: #e6e6e6;
+}
+
+#loadingText { color: #e6e6e6; }
+
+/* Floating "?" help button */
+#howToBtn {
+  background: #63a4ff;
+  color: #1b1e22;
+  border: none;
+  box-shadow: 0 2px 8px rgba(99,164,255,0.35);
+}
+
 </style>
 </head>
 <body>
@@ -108,9 +207,9 @@ box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 <button id="howToBtn" title="Show instructions">?</button>
 
 <div class="controls">
-<button id="play" title="Play">▶️</button>
-<button id="pause" title="Pause">⏸️</button>
-<button id="stop" title="Stop">⏹️</button>
+<button id="play" title="Play">▶</button>
+<button id="pause" title="Pause">⏸</button>
+<button id="stop" title="Stop">⏹</button>
 <button id="loop">Loop Start</button>
 
 <div class="volume-line">
